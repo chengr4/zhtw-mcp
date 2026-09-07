@@ -581,11 +581,17 @@ fn a_declared_default_is_the_one_the_parser_applies() {
             accepted_values(field).contains(&default),
             "{field} declares a default the schema does not accept: {default:?}"
         );
-        assert_eq!(
-            parse_content_type(&json!({})).ok(),
-            ContentType::from_name(default),
-            "{field}: the parser's default and the schema's disagree"
-        );
+
+        // Only content_type has a parser to compare against here. Another field
+        // growing a default should add its own parser beside this, not inherit
+        // this one and fail with a message about the wrong parser.
+        if field == "content_type" {
+            assert_eq!(
+                parse_content_type(&json!({})).ok(),
+                ContentType::from_name(default),
+                "{field}: the parser's default and the schema's disagree"
+            );
+        }
     }
 }
 

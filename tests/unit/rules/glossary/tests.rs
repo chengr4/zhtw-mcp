@@ -107,7 +107,7 @@ fn banned_and_proper_noun_compose() {
         ..ProjectGlossary::default()
     };
     let text = "MediaTek 在內存設計上的優勢";
-    let issues = vec![issue(0, "MediaTek"), issue(11, "優化")];
+    let issues = vec![issue(0, "MediaTek")];
     let out = apply_glossary(text, &[], issues, &glossary);
     // MediaTek issue suppressed.
     assert!(!out.iter().any(|i| i.found == "MediaTek"));

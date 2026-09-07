@@ -113,8 +113,8 @@ fn fires_when_both_forms_present() {
 
 #[test]
 fn groups_multiple_calques_for_same_english() {
-    // Both 線程 and an alternative mainland form 線程數 share english="thread".
-    // (Simulated for the test: real ruleset may differ.)
+    // Two occurrences of the same calque 線程, both anchored to
+    // english="thread", so they group into one entry.
     let text = "我們的線程很慢，線程數量太多。執行緒重構。";
     let issues = vec![
         cross_strait(9, "線程", "執行緒", "thread"),

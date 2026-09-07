@@ -224,6 +224,10 @@ fn backticks_not_excluded_by_content_ranges() {
     // code exclusion is now handled by pulldown-cmark.
     let text = "text `code` more ```block``` end";
     let ranges = build_excluded_ranges(text);
+
+    // Empty is the claim. Checking only that each range avoids the words would
+    // pass a range covering the backticks themselves.
+    assert!(ranges.is_empty(), "got {ranges:?}");
     for r in &ranges {
         let matched = &text[r.start..r.end];
         assert!(

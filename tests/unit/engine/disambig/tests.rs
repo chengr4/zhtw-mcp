@@ -269,7 +269,9 @@ fn semantic_chunk_list_item_boundary() {
     let offset = text.find("軟件").unwrap();
     let chunk = extract_semantic_chunk(text, offset, "軟件".len());
     assert!(chunk.contains("軟件"));
-    // List items are structural boundaries.
+    // List items are structural boundaries, so the neighbours stay out.
+    assert!(!chunk.contains("第一項"), "leaked backwards: {chunk:?}");
+    assert!(!chunk.contains("第三項"), "leaked forwards: {chunk:?}");
 }
 
 #[test]

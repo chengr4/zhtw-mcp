@@ -26,7 +26,7 @@ fn codex_instructions_use_short_server_name() {
 }
 
 #[test]
-fn opencode_skill_is_valid_yaml_structure() {
+fn opencode_skill_contains_expected_fields() {
     let skill = opencode_skill();
     assert!(skill.contains("name: zhtw-lint"));
     assert!(skill.contains("zhtw"));

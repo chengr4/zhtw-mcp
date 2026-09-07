@@ -60,8 +60,9 @@ fn ai_heavy_text_high_score() {
 
 #[test]
 fn sentence_variability_uniform_low() {
-    // All sentences nearly identical length -> low sigma -> contributes to
-    // score.
+    // All sentences nearly identical length, so sigma is low. The value is
+    // serialized as an observation and contributes nothing to the score; see
+    // the note at its call site in ai_score.rs.
     let sentence = "這是一段長度相同的句子內容";
     let mut text = String::new();
     for _ in 0..60 {

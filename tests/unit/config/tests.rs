@@ -64,6 +64,10 @@ packs = ["medical", "legal"]
     assert_eq!(cfg.content_type.as_deref(), Some("markdown"));
     assert_eq!(cfg.max_errors, Some(0));
     assert_eq!(cfg.max_warnings, Some(10));
+    assert_eq!(
+        cfg.suppressions.as_deref(),
+        Some("/path/to/suppressions.json")
+    );
     assert_eq!(cfg.ignore_terms.as_ref().unwrap().len(), 2);
     assert_eq!(cfg.exclude.as_ref().unwrap().len(), 2);
     assert_eq!(cfg.overrides.as_deref(), Some("/path/to/overrides.json"));
