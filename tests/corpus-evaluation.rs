@@ -33,6 +33,11 @@ struct CorpusCase {
     /// specific AI detector set this to measure it.
     #[serde(default)]
     detect_ai: Option<bool>,
+    /// A corpus case that documents a human-writing pattern the scanner must
+    /// leave alone. Native rates stay aggregate, but these named regressions
+    /// fail immediately rather than consuming up to five percent of the budget.
+    #[serde(default)]
+    must_be_clean: bool,
     expected_fixed: String,
     expected_issues: Vec<ExpectedIssue>,
 }
@@ -299,6 +304,14 @@ fn evaluate_native_corpus(
         let issues = scanner
             .scan_for_content_type_with_config(&case.input, content_type, cfg)
             .issues;
+        if case.must_be_clean {
+            assert!(
+                issues.is_empty(),
+                "native case {} must stay clean: {:?}",
+                case.id,
+                issues.iter().map(|issue| &issue.found).collect::<Vec<_>>()
+            );
+        }
         let fixed = apply_fixes_with_context(
             &case.input,
             &issues,

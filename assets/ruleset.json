@@ -7782,7 +7782,8 @@
       "from": "此外",
       "to": [],
       "type": "ai_filler",
-      "context": "overused connective; a single one is ordinary zh-TW, so this is advice. Stacking is what the density pass reports",
+      "disabled": true,
+      "context": "Watchlist only: a single connective is ordinary zh-TW. The density pass exists (DENSITY_TRACKED_PHRASES); what it lacks for this term is a calibrated threshold, so re-enable behind that rather than per occurrence",
       "tags": ["src:humanizer"]
     },
     {

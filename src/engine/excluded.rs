@@ -1,9 +1,9 @@
 // Excluded range builder.
 //
 // Builds byte ranges that should be excluded from spell-checking: URLs, file
-// paths, and @mentions. Code block/inline code exclusion is handled by
-// pulldown-cmark (see markdown.rs) for both plain-text and Markdown input,
-// replacing the former regex-based backtick patterns.
+// paths, @mentions, and marker-gated term mentions. Code block/inline code
+// exclusion is handled by pulldown-cmark (see markdown.rs) for both plain-text
+// and Markdown input, replacing the former regex-based backtick patterns.
 
 use std::sync::LazyLock;
 
@@ -37,9 +37,28 @@ static RE_PATH: LazyLock<Regex> =
 static RE_MENTION: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"@[a-zA-Z0-9_]+").expect("static mention regex"));
 
+// A quoted term is prose unless a marker names it as a term. The marker has to
+// abut the closing bracket, not merely share the sentence:
+// 「軟件」。這個詞是中國用語。 quotes the word and then discusses it, and only
+// the second half is a mention. The accepted markers are 一詞, 這個詞, and 是
+// followed by 說法 or 用語 with an optional origin qualifier (中國, 中國大陸,
+// 大陸, 當地, 地方, 舊) and an optional 的. Keep the marker outside the
+// excluded range so punctuation and the surrounding explanation still receive
+// their ordinary checks.
+const METALINGUISTIC_TERM: &str = r"[^「」『』。！？；，、：\r\n]{1,12}";
+static RE_METALINGUISTIC_QUOTE: LazyLock<Regex> = LazyLock::new(|| {
+    // The term class is spelled once and substituted into both bracket arms.
+    // Two capture names rather than one because a name cannot repeat across
+    // alternation branches, and exactly one arm matches per hit.
+    Regex::new(&format!(
+        r"(?:「(?P<corner>{METALINGUISTIC_TERM})」|『(?P<white_corner>{METALINGUISTIC_TERM})』)(?:是(?:中國(?:大陸)?|大陸|當地|地方|舊)?的?(?:說法|用語)|一詞|這個詞)"
+    ))
+    .expect("static metalinguistic quote regex")
+});
+
 // Public API
 
-/// Build excluded ranges for content patterns: URLs, file paths, @mentions.
+/// Build excluded ranges for URLs, file paths, @mentions, and term mentions.
 ///
 /// Code block and inline code exclusion is handled separately by pulldown-cmark
 /// (via build_markdown_excluded_ranges in markdown.rs). This function covers
@@ -59,7 +78,31 @@ pub fn build_excluded_ranges(content: &str) -> Vec<ByteRange> {
     // 3. @mentions (with overlap check)
     add_matched_ranges(content, &RE_MENTION, &mut ranges, true);
 
+    // 4. A quoted word is not automatically a mention. Only exclude its
+    //    contents when a marker immediately after the closing bracket labels
+    //    it as a term or usage.
+    add_metalinguistic_quote_ranges(content, &mut ranges);
+
     merge_ranges_pub(ranges)
+}
+
+/// Add the quoted term, but not its brackets or explanatory marker, to ranges.
+///
+/// Pushed unconditionally, the way the URL pass does it: a URL, path or mention
+/// match stops at a corner bracket, so it lands wholly inside the term or
+/// wholly outside it, never straddling, and merge_ranges_pub unions the pair
+/// either way.
+fn add_metalinguistic_quote_ranges(content: &str, ranges: &mut Vec<ByteRange>) {
+    for captures in RE_METALINGUISTIC_QUOTE.captures_iter(content) {
+        let term = captures
+            .name("corner")
+            .or_else(|| captures.name("white_corner"))
+            .expect("static metalinguistic quote regex has a term capture");
+        ranges.push(ByteRange {
+            start: term.start(),
+            end: term.end(),
+        });
+    }
 }
 
 /// Check whether the byte span [start, end) overlaps any excluded range.

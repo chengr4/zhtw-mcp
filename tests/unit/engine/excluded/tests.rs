@@ -80,6 +80,40 @@ fn mention_inside_url_not_duplicated() {
     assert_eq!(ranges.len(), 1);
 }
 
+#[test]
+fn metalinguistic_quotes_exclude_only_the_named_term() {
+    let text =
+        "「軟件」是中國用語；『硬件』是中國大陸的說法；「代碼」是大陸用語；『網絡』這個詞也常見。";
+    let ranges = build_excluded_ranges(text);
+    let terms: Vec<&str> = ranges
+        .iter()
+        .map(|range| &text[range.start..range.end])
+        .collect();
+    assert_eq!(terms, ["軟件", "硬件", "代碼", "網絡"]);
+}
+
+#[test]
+fn bare_or_later_sentence_quote_is_not_a_term_mention() {
+    for text in [
+        "我們用「軟件」開發服務。",
+        "「軟件」。這個詞是中國用語。",
+        "「軟件』是中國用語。",
+        "「軟件」是產品名稱而非舊說法。",
+        "「安裝軟件後，請按下確定按鈕」這個詞需要說明。",
+    ] {
+        assert!(build_excluded_ranges(text).is_empty(), "{text}");
+    }
+}
+
+#[test]
+fn metalinguistic_term_cap_is_twelve_characters() {
+    assert_eq!(
+        build_excluded_ranges("「一二三四五六七八九十甲乙」一詞可見。\n").len(),
+        1
+    );
+    assert!(build_excluded_ranges("「一二三四五六七八九十甲乙丙」一詞可見。\n").is_empty());
+}
+
 // Merge overlapping ranges
 
 #[test]
@@ -186,8 +220,8 @@ fn is_excluded_empty() {
 
 #[test]
 fn backticks_not_excluded_by_content_ranges() {
-    // build_excluded_ranges handles URLs/paths/mentions only.
-    // Backtick-based code exclusion is now handled by pulldown-cmark.
+    // build_excluded_ranges handles URLs/paths/mentions only. Backtick-based
+    // code exclusion is now handled by pulldown-cmark.
     let text = "text `code` more ```block``` end";
     let ranges = build_excluded_ranges(text);
     for r in &ranges {

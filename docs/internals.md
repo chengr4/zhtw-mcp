@@ -56,6 +56,8 @@ Metric definitions:
 
 Gate thresholds: precision >= 90%, false-positive rate <= 5% on native zh-TW, safe-fix success >= 85% on AI-generated corpus.
 
+A native case may also carry `must_be_clean`. It asserts that the scanner reports nothing at all for that case, so a named human-writing pattern that regresses fails the run on its own instead of spending part of the 5% false-positive budget. Use it for the patterns the anti-overcorrection guidance names, where a single hit is the defect.
+
 `expected_issues` and `expected_fixed` are intentionally independent: `expected_issues` lists all scanner detections (precision/recall), while `expected_fixed` reflects `LexicalSafe` fixer output (safe-fix rate). Confusable rules and clue-gated cross_strait rules are flagged by the scanner but skipped by the fixer, so some issues appear in `expected_issues` without a corresponding replacement in `expected_fixed`.
 
 Run `make corpus` to print the metrics table locally.

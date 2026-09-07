@@ -5,7 +5,8 @@
 // exclusion, URL/path exclusion, @mention exclusion, case rules, punctuation
 // normalization, and alternatives handling.
 
-use zhtw_mcp::engine::scan::{ContentType, Scanner};
+use zhtw_mcp::engine::scan::{build_exclusions_for_content_type, ContentType, Scanner};
+use zhtw_mcp::fixer::{apply_fixes_with_context, FixMode};
 use zhtw_mcp::rules::ruleset::{CaseRule, Profile, RuleType, SpellingRule};
 
 // Helpers
@@ -293,6 +294,53 @@ fn url_content_excluded_for_spelling() {
     let scanner = Scanner::new(vec![spelling("example", &["Example"])], vec![]);
     let issues = scanner.scan("這是 https://example.com 的文字").issues;
     assert_eq!(issues.len(), 0);
+}
+
+#[test]
+fn metalinguistic_quote_excludes_a_term_but_not_ordinary_use() {
+    let scanner = Scanner::new(vec![spelling("軟件", &["軟體"])], vec![]);
+
+    let mentioned = "「軟件」是中國用語。";
+    let issues = scanner.scan(mentioned).issues;
+    assert!(issues.is_empty());
+    assert!(scanner
+        .scan_profiled_md(mentioned, Profile::Base, false)
+        .issues
+        .is_empty());
+
+    // One sentence naming the term and then using it, so the fixer runs with a
+    // real issue and has to rewrite one occurrence while leaving the other. An
+    // empty issue list would make this pass whatever the exclusion did.
+    let both = "「軟件」是中國用語，我們用軟件開發。";
+    let issues = scanner.scan(both).issues;
+    assert_eq!(issues.len(), 1);
+    let fixed = apply_fixes_with_context(
+        both,
+        &issues,
+        FixMode::LexicalSafe,
+        &build_exclusions_for_content_type(both, ContentType::Markdown),
+        None,
+    );
+    assert_eq!(fixed.text, "「軟件」是中國用語，我們用軟體開發。");
+
+    assert_eq!(scanner.scan("我們用軟件開發服務。").issues.len(), 1);
+    assert_eq!(scanner.scan("我們用「軟件」開發服務。").issues.len(), 1);
+    assert_eq!(
+        scanner.scan("「軟件」是產品名稱而非舊說法。").issues.len(),
+        1
+    );
+}
+
+#[test]
+fn disabled_ciwai_rule_keeps_its_straddle_guard() {
+    let scanner = Scanner::new(
+        vec![SpellingRule::new("此外", vec![], RuleType::AiFiller)],
+        vec![],
+    );
+    assert!(scanner
+        .scan("他個性如此外向，彼此外貌相似，由此外推可得結論。")
+        .issues
+        .is_empty());
 }
 
 #[test]

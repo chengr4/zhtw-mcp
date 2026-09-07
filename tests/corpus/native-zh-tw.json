@@ -937,6 +937,87 @@
       "input": "這批伺服器共 1,200 臺，平均延遲約 3.14 毫秒。",
       "expected_fixed": "這批伺服器共 1,200 臺，平均延遲約 3.14 毫秒。",
       "expected_issues": []
+    },
+    {
+      "id": "native_antiovercorrection_isolated_ranran",
+      "repeat": 1,
+      "input": "然而，這項測試仍需在實際裝置上確認。",
+      "detect_ai": true,
+      "must_be_clean": true,
+      "expected_fixed": "然而，這項測試仍需在實際裝置上確認。",
+      "expected_issues": []
+    },
+    {
+      "id": "native_antiovercorrection_isolated_ciwai",
+      "repeat": 1,
+      "input": "此外，部署前應備份目前的設定。",
+      "detect_ai": true,
+      "must_be_clean": true,
+      "expected_fixed": "此外，部署前應備份目前的設定。",
+      "expected_issues": []
+    },
+    {
+      "id": "native_antiovercorrection_single_emdash",
+      "repeat": 1,
+      "input": "這個差異很小，但對離線使用者很重要——更新前請先匯出資料。",
+      "detect_ai": true,
+      "must_be_clean": true,
+      "expected_fixed": "這個差異很小，但對離線使用者很重要——更新前請先匯出資料。",
+      "expected_issues": []
+    },
+    {
+      "id": "native_antiovercorrection_short_emphasis",
+      "repeat": 1,
+      "input": "這很重要。請先完成備份再繼續。",
+      "detect_ai": true,
+      "must_be_clean": true,
+      "expected_fixed": "這很重要。請先完成備份再繼續。",
+      "expected_issues": []
+    },
+    {
+      "id": "native_antiovercorrection_faq_question",
+      "repeat": 1,
+      "input": "Q：如何重設密碼？A：在登入頁選擇「忘記密碼」，再依指示驗證信箱。",
+      "detect_ai": true,
+      "must_be_clean": true,
+      "expected_fixed": "Q：如何重設密碼？A：在登入頁選擇「忘記密碼」，再依指示驗證信箱。",
+      "expected_issues": []
+    },
+    {
+      "id": "native_antiovercorrection_list_colon",
+      "repeat": 1,
+      "input": "支援三種設定格式：JSON、YAML、TOML。",
+      "detect_ai": true,
+      "must_be_clean": true,
+      "expected_fixed": "支援三種設定格式：JSON、YAML、TOML。",
+      "expected_issues": []
+    },
+    {
+      "id": "native_antiovercorrection_clean_grammar",
+      "repeat": 1,
+      "input": "系統完成驗證後才會寫入資料，失敗時會保留原有內容。",
+      "detect_ai": true,
+      "must_be_clean": true,
+      "expected_fixed": "系統完成驗證後才會寫入資料，失敗時會保留原有內容。",
+      "expected_issues": []
+    },
+    {
+      "id": "native_antiovercorrection_formal_vocabulary",
+      "repeat": 1,
+      "input": "本規範援引既有測試結果，以釐清相容性要求的構成要件。",
+      "detect_ai": true,
+      "must_be_clean": true,
+      "expected_fixed": "本規範援引既有測試結果，以釐清相容性要求的構成要件。",
+      "expected_issues": []
+    },
+    {
+      "id": "native_antiovercorrection_metalinguistic_term",
+      "repeat": 1,
+      "input": "「軟件」是中國用語；臺灣技術文件通常寫作「軟體」。",
+      "detect_ai": true,
+      "must_be_clean": true,
+      "expected_fixed": "「軟件」是中國用語；臺灣技術文件通常寫作「軟體」。",
+      "expected_issues": []
     }
   ]
 }
