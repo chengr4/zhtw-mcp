@@ -62,9 +62,12 @@ Run `make corpus` to print the metrics table locally.
 
 ## Testing
 
+Unit test bodies live under `tests/unit/`, mirroring the module path they cover:
+`src/engine/excluded.rs` declares `#[cfg(test)] #[path = "../../tests/unit/engine/excluded/tests.rs"] mod tests;`. They are still unit tests, so they keep private access and run in the library test binary under their module path, which is why `cargo test engine::scan` below still selects them. `tests/*.rs` holds the integration suites, which see only the public API.
+
 ```bash
 cargo test                             # all tests
-cargo test engine::scan                # specific module
+cargo test engine::scan                # specific module (unit tests, from tests/unit/)
 cargo test --test scanner-integration  # integration tests (scanner behavior)
 cargo test --test e2e-mcp              # E2E: JSON-RPC round-trip
 cargo test --test vocabulary-expansion # political nouns, IT terms, context clues

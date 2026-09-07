@@ -35,8 +35,40 @@ if [ "$#" -gt 0 ]; then
     fi
     files=$*
 else
+
+    # A move that is not staged yet leaves the old path in the index and not in
+    # the worktree, and tar or grep would then stop the run on a file nobody
+    # asked about. Drop exactly those, which is what git reports as deleted,
+    # rather than everything absent: a broken symlink or an unreadable parent
+    # still has to reach the refusal below, because a gate that passes what it
+    # never opened is worse than one that is not there.
+    gone=$(mktemp) || exit 1
+    trap 'rm -f "$gone"' EXIT
+    trap 'rm -f "$gone"; exit 130' HUP INT TERM
+
+    # Each git run is checked on its own, because a failure inside a pipeline is
+    # masked by the exit status of its last stage. Lowercase marks
+    # assume-unchanged, so a path carrying both bits reads 's' and is missed by
+    # 'S' alone while git also stops reporting it as deleted.
+    deleted=$(git ls-files --deleted) || exit 1
+    flags=$(git ls-files -v) || exit 1
+
+    # Absence is what disqualifies a path and git naming it is what makes the
+    # absence explainable, so a materialized skip-worktree file is still checked
+    # and a broken symlink is in neither list and still reaches the refusal
+    # below.
+    printf '%s\n%s\n' "$deleted" \
+        "$(printf '%s\n' "$flags" | sed -n 's/^[Ssh] //p')" \
+        | grep -v '^$' | sort -u \
+        | while IFS= read -r path; do
+
+            # -L as well as -e: a dangling symlink is present in the worktree
+            # even though -e follows the link and says otherwise, so it has to
+            # reach the refusal below rather than be dropped here.
+            [ -e "$path" ] || [ -L "$path" ] || printf '%s\n' "$path"
+        done > "$gone" || exit 1
     files=$(git ls-files --cached --others --exclude-standard \
-        -- 'build.rs' '*.rs' '*.sh' '*.py' | sort -u)
+        -- 'build.rs' '*.rs' '*.sh' '*.py' | sort -u | grep -vxFf "$gone")
 fi
 
 [ -n "$files" ] || exit 0

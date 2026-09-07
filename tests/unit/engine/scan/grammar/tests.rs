@@ -1230,7 +1230,7 @@ fn scan_bare(text: &str) -> Vec<Issue> {
 /// the scanner does and a migration that dropped a phrase would fail them.
 fn attribution_guard() -> StructuralGuard {
     let ruleset: crate::rules::ruleset::Ruleset =
-        serde_json::from_str(include_str!("../../../../assets/ruleset.json"))
+        serde_json::from_str(include_str!("../../../../../assets/ruleset.json"))
             .expect("embedded ruleset parses");
     let phrases: Vec<String> = ruleset
         .spelling_rules
@@ -2992,7 +2992,7 @@ fn assert_ac_matches_legacy(text: &str) {
     ac_issues.sort_by(|a, b| a.offset.cmp(&b.offset).then(a.found.cmp(&b.found)));
 
     let mut legacy_issues = Vec::new();
-    scan_grammar_legacy(
+    legacy::scan_grammar_legacy(
         &mut Emitter::new(text, &[], &mut legacy_issues),
         Register::Casual,
     );
