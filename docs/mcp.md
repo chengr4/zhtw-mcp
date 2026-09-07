@@ -131,6 +131,18 @@ Summary output:
 
 Returns aggregate counts only, plus any available document-level metadata such as `coverage`, `oral_density`, `quality_flags`, and `ai_signature`.
 
+## Input size
+
+The `zhtw` tool refuses a `text` argument over 256 KiB and names the limit in
+the error. A JSON-RPC line over 4 MiB is refused by the transport before it is
+parsed. It replies with JSON-RPC `-32600`, a null id, and `request too large`,
+then resumes at the next newline. If no newline appears after a further 64 MiB
+of discarded input, the transport closes the session. Both caps exist because
+the server reads a stream it does not control.
+
+`zhtw-mcp lint` also caps each file and stdin input at 16 MiB. Split larger
+machine-generated input before passing it to the lint subcommand.
+
 ## Network access and `ZHTW_NO_NETWORK`
 
 Everything the server does is local except one tool argument. Passing

@@ -212,6 +212,13 @@ zhtw-mcp lint docs/ --telemetry
 
 This reports processed file count plus total error/warning counts. It does not change stdout formatting or exit-code behavior.
 
+### Input size
+
+`zhtw-mcp lint` accepts each file or stdin input up to 16 MiB. An over-limit
+input is reported on stderr while the rest of a batch continues, but the run
+exits 2 because its result is incomplete. The MCP server has separate limits
+for its `text` argument and transport lines; see [Input size](mcp.md#input-size).
+
 ### Network access and `ZHTW_NO_NETWORK`
 
 `zhtw-mcp` is local-only except for `--verify`, which sends the sentence around
