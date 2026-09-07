@@ -107,7 +107,9 @@ src/engine/scan/overlap.rs       Resolves detections that cover the same span
 src/engine/s2t.rs                Simplified to traditional, from the OpenCC tables
 ```
 
-`src/engine/scan/tests_generated.rs` is misnamed and is not generated: it holds
-the hand-written scanner tests split out of `scan/mod.rs`. Add a scanner test
-there or in the pass's own module, and add the corpus fixture separately when
-the rule is meant to move a metric.
+`tests/unit/engine/scan/tests_generated.rs` is misnamed and is not generated: it
+holds the hand-written scanner tests split out of `scan/mod.rs`. Add a scanner
+test there or in the pass's own test file under `tests/unit/`, never in the pass
+itself, and add the corpus fixture separately when the rule is meant to move a
+metric. zhtw-verify has the `#[path]` declaration a module uses to reach its
+tests.

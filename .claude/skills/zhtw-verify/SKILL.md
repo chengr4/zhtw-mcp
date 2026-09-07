@@ -134,11 +134,27 @@ sweep from growing back a comment at a time. Run it on its own with
 
 ## Writing a test
 
-Integration suites sit beside the ones already in `tests/`, unit tests in the
-module they cover. `src/engine/scan/tests_generated.rs` is misnamed: it holds
-the hand-written scanner tests mechanically split out of `scan/mod.rs`, which is
-why `mod.rs` ends in an `include!` of it. Edit it like any other test file, and
-jump to the relevant test rather than reading the whole file.
+No test body goes under `src/`. Integration suites sit beside the ones already in
+`tests/`; a unit test goes to `tests/unit/` plus the module path plus the module
+name, and the module it covers points at it:
+
+```rust
+#[cfg(test)]
+#[path = "../../tests/unit/engine/excluded/tests.rs"]
+mod tests;
+```
+
+The `#[path]` is relative to the directory holding the source file. These are
+still unit tests, so they keep private access and need no item made `pub`; see
+zhtw-conventions for what legitimately stays in `src/` and what does not.
+
+`tests/unit/engine/scan/tests_generated.rs` is misnamed: it holds the
+hand-written scanner tests mechanically split out of `scan/mod.rs`, which is why
+`tests/unit/engine/scan/tests.rs` ends in an `include!` of it. Edit it like any
+other test file, and jump to the relevant test rather than reading the whole
+file. `tests/unit/engine/scan/grammar/legacy.rs` is the other one to know: nine
+legacy scanners kept only so the parity differential tests can check the
+Aho-Corasick dispatch against them.
 
 Positions are byte offsets mapped back through NFC normalization and
 pulldown-cmark event ranges. A test that computes a position on the

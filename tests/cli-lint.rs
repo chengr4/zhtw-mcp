@@ -27,12 +27,16 @@ fn run_lint_stdin(extra_args: &[&str], input: &str) -> Output {
         .env_remove("RUST_LOG")
         .spawn()
         .and_then(|mut child| {
-            child
-                .stdin
-                .take()
-                .unwrap()
-                .write_all(input.as_bytes())
-                .unwrap();
+            // A run that rejects its arguments exits before it reads stdin, so
+            // this write races that exit and can land on a closed pipe. That is
+            // the command under test behaving correctly, not a failure, and the
+            // verdict belongs to wait_with_output below. Without this the whole
+            // suite flakes under parallel load.
+            match child.stdin.take().unwrap().write_all(input.as_bytes()) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {}
+                Err(e) => return Err(e),
+            }
             child.wait_with_output()
         })
         .unwrap()
@@ -1758,8 +1762,9 @@ fn cli_lint_ai_rewrite_hint_is_serialized() {
 
 #[test]
 fn cli_lint_writing_humanizer_watchlist_comprehensive() {
-    // 提升 and 增強 are absent on purpose: both are ordinary Taiwanese
-    // technical usage and are parked on the watchlist.
+    // 此外, 提升 and 增強 are absent on purpose: all three are ordinary
+    // Taiwanese technical usage and are parked on the watchlist. 此外 leads the
+    // fixture text and still must not be reported.
     let text = "此外，持久的制度與永恆的價值會增強信任並提升效率。\
         我們要培養能力、促進合作、涵養精神，留下寶貴的經驗。\
         這是一個充滿活力的場域，呈現相互作用與交織的關係。\
@@ -1778,7 +1783,6 @@ fn cli_lint_writing_humanizer_watchlist_comprehensive() {
         .filter_map(|i| i["found"].as_str())
         .collect();
     for expected in [
-        "此外",
         "持久的",
         "永恆的",
         "培養",
@@ -1813,6 +1817,17 @@ fn cli_lint_writing_humanizer_watchlist_comprehensive() {
             "missing {expected}; found={found:?}; stdout={stdout}"
         );
     }
+}
+
+#[test]
+fn cli_lint_isolated_ciwai_is_not_an_ai_signal() {
+    let output = run_lint_stdin(
+        &["--detect-ai", "--format", "json"],
+        "此外，部署前應備份目前的設定。",
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("isolated 此外 JSON output");
+    assert!(json["issues"].as_array().expect("issues array").is_empty());
 }
 
 #[test]
@@ -2160,7 +2175,7 @@ fn cli_fix_does_not_split_a_word_ending_in_wai() {
         let output = run_lint_stdin(&["--fix"], input);
         assert_eq!(String::from_utf8_lossy(&output.stdout).trim_end(), want);
     }
-    // 此外 is reported but not deleted: one connective is ordinary zh-TW.
+    // 此外 is disabled because one connective is ordinary zh-TW.
     let output = run_lint_stdin(&["--fix", "--detect-ai"], "此外，還有三個選項。");
     assert_eq!(
         String::from_utf8_lossy(&output.stdout).trim_end(),

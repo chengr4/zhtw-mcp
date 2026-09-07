@@ -38,10 +38,45 @@ cd "$ROOT" || exit 1
 # src/engine/s2t_data.rs out of every list here and therefore out of the drift
 # comparison below. It is not out of cargo fmt: that walks the crate from its
 # root and finds the file whatever this list says, which is why the copy the
-# check runs against carries a stub instead.
+# check runs against carries a stub instead. A move that is not staged yet
+# leaves the old path in the index and not in the worktree, and tar below would
+# stop the whole run on it, so drop exactly the paths git reports as deleted.
+# Not everything that fails a test for existence: a name holding a newline
+# arrives here quoted and so looks absent, and it has to reach the unusable
+# guard below and fail loudly rather than be skipped. Skip-worktree entries,
+# which is how a sparse checkout holds a path it has not materialized, are
+# absent from disk and are not reported as deleted, so they have to be named
+# here too or tar stops on them.
+gone=$(mktemp) || exit 1
+trap 'rm -f "$gone"' EXIT
+trap 'rm -f "$gone"; exit 130' HUP INT TERM
+
+# Each git run is checked on its own: a failure inside a pipeline is masked by
+# the exit status of the last stage, and an empty list here would quietly hand
+# every formatter a path that is not there.
+deleted=$(git ls-files --deleted) || exit 1
+flags=$(git ls-files -v) || exit 1
+
+# Lowercase marks assume-unchanged, so a path carrying both bits reads 's' and
+# is missed by 'S' alone while git also stops reporting it as deleted. Absence
+# is what disqualifies a path, and git naming it is what makes the absence
+# explainable. A skip-worktree file that is materialized still gets formatted,
+# and a broken symlink or a quoted name is in neither list, so it stays and
+# reaches the guard below instead of being skipped.
+printf '%s\n%s\n' "$deleted" "$(printf '%s\n' "$flags" | sed -n 's/^[Ssh] //p')" \
+    | grep -v '^$' | sort -u \
+    | while IFS= read -r path; do
+
+        # -L as well as -e: a dangling symlink is present in the worktree even
+        # though -e follows the link and says otherwise, so it is a path this
+        # run has to account for rather than drop.
+        [ -e "$path" ] || [ -L "$path" ] || printf '%s\n' "$path"
+    done > "$gone" || exit 1
+
 list()
 {
-    git ls-files --cached --others --exclude-standard -- "$@" | sort -u
+    git ls-files --cached --others --exclude-standard -- "$@" | sort -u \
+        | grep -vxFf "$gone"
 }
 
 rust=$(list 'build.rs' 'build/*.rs' 'src/*.rs' 'tests/*.rs' 'benches/*.rs')
@@ -184,9 +219,11 @@ work=$(mktemp -d) || exit 2
 
 # The signal traps exit rather than falling through: a handler that only cleans
 # up leaves the rest of the script running against a directory it just deleted,
-# which reports every file as drift.
-trap 'rm -rf "$work" "$work.tar"' EXIT
-trap 'rm -rf "$work" "$work.tar"; exit 130' HUP INT TERM
+# which reports every file as drift. A shell keeps one handler per signal, so
+# these replace the pair set for $gone above and have to remove it too or the
+# check mode leaks one file per run.
+trap 'rm -rf "$work" "$work.tar"; rm -f "$gone"' EXIT
+trap 'rm -rf "$work" "$work.tar"; rm -f "$gone"; exit 130' HUP INT TERM
 
 files=$(printf '%s\n%s\n%s\n%s\n' "$rust" "$shell" "$python" "$ruleset" | grep -v '^$')
 

@@ -120,8 +120,38 @@ assets/         ruleset.json, the source of truth for vocabulary rules
 scripts/        Table generator, ruleset checker, gate and hook scripts
 extension/      Browser extension over the browser-wasm build of the library
 tests/          Integration suites, corpora and fixtures
+tests/unit/     Unit test bodies, mirroring the module path they belong to
 docs/           Internals, rule schema, CLI and MCP references
 ```
 
 `src/engine/s2t_data.rs` is generated and gitignored. See zhtw-verify for what
 regenerates it, and zhtw-rules for how a vocabulary rule is added.
+
+## Test code does not live in src
+
+No test bodies under `src/`. A module that has unit tests declares them and
+points at the file:
+
+```rust
+#[cfg(test)]
+#[path = "../../tests/unit/engine/excluded/tests.rs"]
+mod tests;
+```
+
+The file lives at `tests/unit/` plus the module path plus the module name, so
+`src/engine/excluded.rs` puts its `tests` module in
+`tests/unit/engine/excluded/tests.rs` and `src/engine/scan/mod.rs` puts its in
+`tests/unit/engine/scan/tests.rs`. The relative path in the attribute is counted
+from the directory holding the source file, not from the repository root.
+
+They stay unit tests, which is the point: they keep private access, they compile
+into the same test binary, and no internal item has to become `pub` to be
+reachable. Making an internal `pub` so a test in `tests/*.rs` can see it is the
+thing this arrangement exists to avoid.
+
+What legitimately remains in `src/` is not test bodies: a `#[cfg(test)]` helper
+on a production type, such as `Trie::get_freq` in `src/engine/segment.rs` or
+`Scanner::force_bytewise` in `src/engine/scan/mod.rs`, is an affordance the type
+offers its tests and belongs with the type. A test-only free function is test
+code and goes to `tests/unit/`, which is where the nine legacy grammar scanners
+sit as `tests/unit/engine/scan/grammar/legacy.rs`.

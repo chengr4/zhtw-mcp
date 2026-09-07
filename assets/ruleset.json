@@ -4021,6 +4021,7 @@
       "from": "大陸同胞",
       "to": ["中國民眾"],
       "type": "political_coloring",
+      "context": "「同胞」預設兩岸同屬一國的政治立場，tw 中性表述為「中國民眾」",
       "english": "mainland compatriots"
     },
     {
@@ -7782,7 +7783,8 @@
       "from": "此外",
       "to": [],
       "type": "ai_filler",
-      "context": "overused connective; a single one is ordinary zh-TW, so this is advice. Stacking is what the density pass reports",
+      "disabled": true,
+      "context": "Watchlist only: a single connective is ordinary zh-TW. The density pass exists (DENSITY_TRACKED_PHRASES); what it lacks for this term is a calibrated threshold, so re-enable behind that rather than per occurrence",
       "tags": ["src:humanizer"]
     },
     {
@@ -11049,6 +11051,7 @@
       "from": "英聯邦",
       "to": ["大英國協"],
       "type": "political_coloring",
+      "context": "cn 譯名，tw 官方與媒體通行「大英國協」",
       "english": "Commonwealth of Nations"
     },
     {
