@@ -906,9 +906,13 @@ impl Scanner {
         if cfg.casing {
             self.scan_case(&mut em);
         }
-        if cfg.basic_punctuation {
+        if cfg.punctuation {
             self.scan_punctuation(&mut em, cfg);
-            self.scan_cn_curly_quotes(&mut em);
+        }
+        if cfg.quotes {
+            self.scan_quotes(&mut em);
+        }
+        if cfg.spacing {
             self.scan_spacing(&mut em);
         }
         if cfg.ellipsis_normalization {
@@ -1346,7 +1350,7 @@ impl Scanner {
         if cfg.casing {
             self.scan_case(em);
         }
-        if cfg.basic_punctuation {
+        if cfg.punctuation {
             self.scan_punctuation(em, cfg);
         }
         if cfg.dunhao_detection {
@@ -1358,8 +1362,10 @@ impl Scanner {
         if cfg.ellipsis_normalization {
             scan_ellipsis(em);
         }
-        if cfg.basic_punctuation {
-            self.scan_cn_curly_quotes(em);
+        if cfg.quotes {
+            self.scan_quotes(em);
+        }
+        if cfg.spacing {
             self.scan_spacing(em);
         }
         // Repetition detection (CJK duplicates + Latin duplicates).

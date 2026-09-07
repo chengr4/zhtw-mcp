@@ -136,8 +136,12 @@ pub struct ProfileConfig {
     pub spelling: bool,
     /// Enable case rules (proper noun casing).
     pub casing: bool,
-    /// Enable basic punctuation: comma, period, !, ?, ;, (, ).
-    pub basic_punctuation: bool,
+    /// Enable half-width punctuation: comma, period, !, ?, ;, (, ).
+    pub punctuation: bool,
+    /// Enable Chinese quotation mark normalization.
+    pub quotes: bool,
+    /// Enable spacing between CJK, Latin letters, and digits.
+    pub spacing: bool,
     /// Enable full-width colon enforcement (: -> ：).
     pub colon_enforcement: bool,
     /// Enable enumeration comma (dunhao) detection.
@@ -268,7 +272,9 @@ impl Profile {
                 document_genre: AttributionGenre::Casual,
                 spelling: true,
                 casing: true,
-                basic_punctuation: true,
+                punctuation: true,
+                quotes: true,
+                spacing: true,
                 colon_enforcement: true,
                 dunhao_detection: true,
                 range_normalization: true,
@@ -295,7 +301,9 @@ impl Profile {
                 document_genre: AttributionGenre::Casual,
                 spelling: true,
                 casing: true,
-                basic_punctuation: true,
+                punctuation: true,
+                quotes: true,
+                spacing: true,
                 colon_enforcement: true,
                 dunhao_detection: true,
                 range_normalization: true,

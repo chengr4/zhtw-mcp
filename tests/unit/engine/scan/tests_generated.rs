@@ -2379,7 +2379,9 @@
         // Verify that config() returns sensible values for each profile.
         let default_cfg = Profile::Base.config();
         assert!(default_cfg.spelling);
-        assert!(default_cfg.basic_punctuation);
+        assert!(default_cfg.punctuation);
+        assert!(default_cfg.quotes);
+        assert!(default_cfg.spacing);
         assert!(default_cfg.colon_enforcement);
         assert!(!default_cfg.variant_normalization);
         assert!(!default_cfg.range_en_dash);

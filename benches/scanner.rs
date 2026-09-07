@@ -466,7 +466,9 @@ fn bench_cpu_attribution_100kb(c: &mut Criterion) {
         document_genre: AttributionGenre::Casual,
         spelling: false,
         casing: false,
-        basic_punctuation: false,
+        punctuation: false,
+        quotes: false,
+        spacing: false,
         colon_enforcement: false,
         dunhao_detection: false,
         range_normalization: false,
@@ -496,10 +498,11 @@ fn bench_cpu_attribution_100kb(c: &mut Criterion) {
         ..cfg_none
     };
 
-    // Punctuation + spacing only (basic_punctuation gates both scan_punctuation
-    // and scan_spacing + scan_cn_curly_quotes).
+    // Punctuation, quote, and spacing passes only.
     let cfg_punct = ProfileConfig {
-        basic_punctuation: true,
+        punctuation: true,
+        quotes: true,
+        spacing: true,
         colon_enforcement: true,
         dunhao_detection: true,
         range_normalization: true,
