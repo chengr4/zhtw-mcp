@@ -696,6 +696,7 @@ pub struct ProfileFilter {
     pub exclude_variant: bool,
     pub exclude_ai_filler: bool,
     pub exclude_translationese: bool,
+    pub exclude_spelling: bool,
 }
 
 impl ProfileFilter {
@@ -705,7 +706,17 @@ impl ProfileFilter {
             exclude_variant: false,
             exclude_ai_filler: false,
             exclude_translationese: false,
+            exclude_spelling: false,
         }
+    }
+
+    /// True when at least one rule type is excluded, so the retain pass is
+    /// worth running at all.
+    pub fn excludes_anything(&self) -> bool {
+        self.exclude_variant
+            || self.exclude_ai_filler
+            || self.exclude_translationese
+            || self.exclude_spelling
     }
 
     /// Build a filter from a ProfileConfig: exclude rule types that the
@@ -715,6 +726,7 @@ impl ProfileFilter {
             exclude_variant: !cfg.variant_normalization,
             exclude_ai_filler: !cfg.ai_filler_detection,
             exclude_translationese: !cfg.translationese_detection,
+            exclude_spelling: !cfg.spelling,
         }
     }
 }
@@ -869,7 +881,7 @@ fn prepare_rules(spelling_rules: Vec<SpellingRule>, filter: &ProfileFilter) -> V
 
     // Profile-aware filtering: exclude rule types that the target profile would
     // always fast-reject. Runs after dedup to preserve last-wins semantics.
-    if filter.exclude_variant || filter.exclude_ai_filler || filter.exclude_translationese {
+    if filter.excludes_anything() {
         spelling_rules.retain(|r| {
             if filter.exclude_variant && r.rule_type == RuleType::Variant {
                 return false;
@@ -878,6 +890,9 @@ fn prepare_rules(spelling_rules: Vec<SpellingRule>, filter: &ProfileFilter) -> V
                 return false;
             }
             if filter.exclude_translationese && r.rule_type == RuleType::Translationese {
+                return false;
+            }
+            if filter.exclude_spelling && r.rule_type.in_spelling_family() {
                 return false;
             }
             true

@@ -8,6 +8,7 @@ const issueListNode = document.querySelector("#issue-list");
 const scanButton = document.querySelector("#scan-button");
 const profileInput = document.querySelector("#profile");
 const relaxedInput = document.querySelector("#relaxed");
+const offInput = document.querySelector("#off");
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -34,6 +35,9 @@ async function runScan() {
       options: {
         profile: profileInput.value,
         relaxed: relaxedInput.checked,
+        // Subtracted after the profile resolves, the same order the CLI and the
+        // MCP tool apply --off in.
+        off: [...offInput.selectedOptions].map((option) => option.value),
       },
     });
     if (!response.ok) {

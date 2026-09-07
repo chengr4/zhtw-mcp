@@ -1,5 +1,6 @@
 use super::overlap::resolve_overlaps;
 use super::*;
+use crate::rules::ruleset::RuleFamily;
 use crate::rules::ruleset::RuleType;
 
 fn sample_spelling_rules() -> Vec<SpellingRule> {

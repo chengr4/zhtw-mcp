@@ -30,6 +30,81 @@ pub enum Profile {
     Strict,
 }
 
+/// Public rule families callers may subtract from a profile.
+///
+/// This is intentionally a named API rather than a view of `ProfileConfig`.
+/// Several config fields tune a family or describe document policy, so exposing
+/// them would make implementation details part of the command-line contract.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuleFamily {
+    Spelling,
+    Casing,
+    Punctuation,
+    Quotes,
+    Spacing,
+    Colon,
+    Dunhao,
+    Range,
+    Variant,
+    Ellipsis,
+    Grammar,
+    Ai,
+    Translationese,
+    Rhythm,
+}
+
+impl RuleFamily {
+    /// All public family names, in the order shown in diagnostics and help.
+    pub const ALL: &'static [Self] = &[
+        Self::Spelling,
+        Self::Casing,
+        Self::Punctuation,
+        Self::Quotes,
+        Self::Spacing,
+        Self::Colon,
+        Self::Dunhao,
+        Self::Range,
+        Self::Variant,
+        Self::Ellipsis,
+        Self::Grammar,
+        Self::Ai,
+        Self::Translationese,
+        Self::Rhythm,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Spelling => "spelling",
+            Self::Casing => "casing",
+            Self::Punctuation => "punctuation",
+            Self::Quotes => "quotes",
+            Self::Spacing => "spacing",
+            Self::Colon => "colon",
+            Self::Dunhao => "dunhao",
+            Self::Range => "range",
+            Self::Variant => "variant",
+            Self::Ellipsis => "ellipsis",
+            Self::Grammar => "grammar",
+            Self::Ai => "ai",
+            Self::Translationese => "translationese",
+            Self::Rhythm => "rhythm",
+        }
+    }
+
+    pub fn from_str_strict(s: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|family| family.name() == s)
+    }
+
+    pub fn names() -> String {
+        Self::ALL
+            .iter()
+            .map(|family| family.name())
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
 /// What kind of sourcing the document is held to, for the one detector that
 /// asks: an unsupported authority attribution.
 ///
@@ -136,8 +211,12 @@ pub struct ProfileConfig {
     pub spelling: bool,
     /// Enable case rules (proper noun casing).
     pub casing: bool,
-    /// Enable basic punctuation: comma, period, !, ?, ;, (, ).
-    pub basic_punctuation: bool,
+    /// Enable half-width punctuation: comma, period, !, ?, ;, (, ).
+    pub punctuation: bool,
+    /// Enable Chinese quotation mark normalization.
+    pub quotes: bool,
+    /// Enable spacing between CJK, Latin letters, and digits.
+    pub spacing: bool,
     /// Enable full-width colon enforcement (: -> ：).
     pub colon_enforcement: bool,
     /// Enable enumeration comma (dunhao) detection.
@@ -203,6 +282,72 @@ pub struct ProfileConfig {
 }
 
 impl ProfileConfig {
+    /// Disable the named public rule families after all profile capabilities
+    /// have resolved.  Subtraction is deliberately one-way: a caller can
+    /// compose a profile and capabilities, then make only the unwanted
+    /// families quiet without inventing another profile.
+    pub fn with_disabled(mut self, families: &[RuleFamily]) -> Self {
+        for family in families {
+            match family {
+                RuleFamily::Spelling => self.spelling = false,
+                RuleFamily::Casing => self.casing = false,
+                RuleFamily::Punctuation => self.punctuation = false,
+                RuleFamily::Quotes => self.quotes = false,
+                RuleFamily::Spacing => self.spacing = false,
+                RuleFamily::Colon => self.colon_enforcement = false,
+                RuleFamily::Dunhao => self.dunhao_detection = false,
+                RuleFamily::Range => self.range_normalization = false,
+                RuleFamily::Variant => self.variant_normalization = false,
+                RuleFamily::Ellipsis => self.ellipsis_normalization = false,
+                RuleFamily::Grammar => self.grammar_checks = false,
+                RuleFamily::Ai => {
+                    self.ai_filler_detection = false;
+                    self.ai_semantic_safety = false;
+                    self.ai_density_detection = false;
+                    self.ai_structural_patterns = false;
+                }
+                RuleFamily::Translationese => self.translationese_detection = false,
+                RuleFamily::Rhythm => self.rhythm = false,
+            }
+        }
+        self
+    }
+
+    /// Whether this config still consults rules of `rule_type`.
+    ///
+    /// One pass over the rule database serves four public families, so the
+    /// question is per rule type rather than per pass.  The scan loop, the
+    /// coverage count and the build-time rule filter all ask it here.
+    pub fn allows_rule_type(&self, rule_type: RuleType) -> bool {
+        match rule_type {
+            RuleType::Variant => self.variant_normalization,
+            RuleType::AiFiller => self.ai_filler_detection,
+            RuleType::Translationese => self.translationese_detection,
+            other => self.spelling && other.in_spelling_family(),
+        }
+    }
+
+    /// Whether the lexical pass still has a family to serve.
+    ///
+    /// One pass over the rule database carries four public families: spelling
+    /// itself, plus variant, ai and translationese, which are rule types
+    /// filtered inside it.  Gating the pass on "spelling" alone would take the
+    /// other three down with it, so the caller asks this instead.
+    pub fn lexical_pass_enabled(&self) -> bool {
+        self.spelling
+            || self.variant_normalization
+            || self.ai_filler_detection
+            || self.translationese_detection
+    }
+
+    /// Whether the half-width punctuation walk still has a family to serve.
+    ///
+    /// The colon arm lives in that walk and answers "colon_enforcement", so
+    /// turning "punctuation" off must not silence it.
+    pub fn punctuation_pass_enabled(&self) -> bool {
+        self.punctuation || self.colon_enforcement
+    }
+
     /// Return a copy with the political stance overridden.
     pub fn with_stance(mut self, stance: PoliticalStance) -> Self {
         self.political_stance = stance;
@@ -268,7 +413,9 @@ impl Profile {
                 document_genre: AttributionGenre::Casual,
                 spelling: true,
                 casing: true,
-                basic_punctuation: true,
+                punctuation: true,
+                quotes: true,
+                spacing: true,
                 colon_enforcement: true,
                 dunhao_detection: true,
                 range_normalization: true,
@@ -295,7 +442,9 @@ impl Profile {
                 document_genre: AttributionGenre::Casual,
                 spelling: true,
                 casing: true,
-                basic_punctuation: true,
+                punctuation: true,
+                quotes: true,
+                spacing: true,
                 colon_enforcement: true,
                 dunhao_detection: true,
                 range_normalization: true,
@@ -510,6 +659,22 @@ impl RuleType {
             RuleType::PoliticalColoring | RuleType::Typo => Severity::Error,
             RuleType::CrossStrait | RuleType::Confusable | RuleType::Variant => Severity::Warning,
             RuleType::AiFiller | RuleType::Translationese => Severity::Info,
+        }
+    }
+
+    /// True when the "spelling" family owns this rule type.
+    ///
+    /// Three rule types answer to a public family of their own; the rest are
+    /// what "--off spelling" subtracts.  Written without a wildcard on purpose:
+    /// a rule type added later has to say which family it belongs to here
+    /// rather than being swept into spelling by whichever site guesses first.
+    pub fn in_spelling_family(self) -> bool {
+        match self {
+            RuleType::PoliticalColoring
+            | RuleType::CrossStrait
+            | RuleType::Typo
+            | RuleType::Confusable => true,
+            RuleType::Variant | RuleType::AiFiller | RuleType::Translationese => false,
         }
     }
 }

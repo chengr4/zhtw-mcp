@@ -51,7 +51,10 @@ impl Scanner {
         let mut excl_cursor: usize = 0;
         let n_rules = self.spelling_db.spelling_rules.len();
 
-        // Pre-compute profile gates.
+        // Pre-compute profile gates. Variant, ai filler and translationese are
+        // public families of their own, so the remaining rule types are what
+        // the spelling family owns and skip_spelling gates.
+        let skip_spelling = !cfg.spelling;
         let skip_variant = !cfg.variant_normalization || zh_type == ChineseType::Simplified;
         let skip_ai = !cfg.ai_filler_detection;
         let skip_translationese = !cfg.translationese_detection;
@@ -75,6 +78,7 @@ impl Scanner {
                         RuleType::Variant if skip_variant => continue,
                         RuleType::AiFiller if skip_ai => continue,
                         RuleType::Translationese if skip_translationese => continue,
+                        other if skip_spelling && other.in_spelling_family() => continue,
                         RuleType::PoliticalColoring
                             if !cfg
                                 .political_stance

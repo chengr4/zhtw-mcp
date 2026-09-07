@@ -46,8 +46,8 @@ use serde::{Deserialize, Serialize};
 
 use super::zhtype::ChineseType;
 use crate::rules::ruleset::{
-    CaseRule, Issue, IssueType, PhaseFamily, PhasePass, Profile, ProfileConfig, Register, RuleType,
-    Severity, SpellingRule,
+    CaseRule, Issue, IssueType, PhaseFamily, PhasePass, Profile, ProfileConfig, Register, Severity,
+    SpellingRule,
 };
 
 use self::ellipsis::scan_ellipsis;
@@ -900,15 +900,19 @@ impl Scanner {
         let mut issues = Vec::new();
         let mut clue_buf = Vec::new();
         let mut em = Emitter::new(text, excluded, &mut issues);
-        if cfg.spelling {
+        if cfg.lexical_pass_enabled() {
             self.scan_spelling(&mut em, zh_type, cfg, &mut clue_buf, &bitmap);
         }
         if cfg.casing {
             self.scan_case(&mut em);
         }
-        if cfg.basic_punctuation {
+        if cfg.punctuation_pass_enabled() {
             self.scan_punctuation(&mut em, cfg);
-            self.scan_cn_curly_quotes(&mut em);
+        }
+        if cfg.quotes {
+            self.scan_quotes(&mut em);
+        }
+        if cfg.spacing {
             self.scan_spacing(&mut em);
         }
         if cfg.ellipsis_normalization {
@@ -1340,13 +1344,13 @@ impl Scanner {
         clue_index: &mut Vec<(usize, u16)>,
         boundary_bitmap: &BoundaryBitmap,
     ) {
-        if cfg.spelling {
+        if cfg.lexical_pass_enabled() {
             self.scan_spelling(em, zh_type, cfg, clue_index, boundary_bitmap);
         }
         if cfg.casing {
             self.scan_case(em);
         }
-        if cfg.basic_punctuation {
+        if cfg.punctuation_pass_enabled() {
             self.scan_punctuation(em, cfg);
         }
         if cfg.dunhao_detection {
@@ -1358,8 +1362,10 @@ impl Scanner {
         if cfg.ellipsis_normalization {
             scan_ellipsis(em);
         }
-        if cfg.basic_punctuation {
-            self.scan_cn_curly_quotes(em);
+        if cfg.quotes {
+            self.scan_quotes(em);
+        }
+        if cfg.spacing {
             self.scan_spacing(em);
         }
         // Repetition detection (CJK duplicates + Latin duplicates).
@@ -1381,6 +1387,10 @@ impl Scanner {
             "scan config enables ai_filler_detection but scanner was built without ai_filler rules"
         );
         debug_assert!(
+            !(self.build_filter.exclude_spelling && cfg.spelling),
+            "scan config enables spelling but scanner was built without spelling-family rules"
+        );
+        debug_assert!(
             !(self.build_filter.exclude_translationese && cfg.translationese_detection),
             "scan config enables translationese_detection but scanner was built without translationese rules"
         );
@@ -1392,18 +1402,13 @@ impl Scanner {
     /// do not count. One pass, subtracting each rule whose type the config
     /// gates off.
     fn count_active_spelling_rules(&self, cfg: &ProfileConfig) -> usize {
-        if !cfg.spelling {
+        if !cfg.lexical_pass_enabled() {
             return 0;
         }
         self.spelling_db
             .spelling_rules
             .iter()
-            .filter(|r| match r.rule_type {
-                RuleType::Variant => cfg.variant_normalization,
-                RuleType::AiFiller => cfg.ai_filler_detection,
-                RuleType::Translationese => cfg.translationese_detection,
-                _ => true,
-            })
+            .filter(|r| cfg.allows_rule_type(r.rule_type))
             .count()
     }
 
@@ -1465,7 +1470,7 @@ impl Scanner {
 
         // Fused single-pass: detect SC/TC type, build LineIndex, and optionally
         // build BoundaryBitmap -- shares one char_indices() iteration.
-        let build_bitmap = cfg.spelling && text.len() > 4096;
+        let build_bitmap = cfg.lexical_pass_enabled() && text.len() > 4096;
         let (zh_type, line_index, boundary_bitmap) = detect_type_lineindex_and_bitmap(
             text,
             if build_bitmap {
@@ -1536,12 +1541,32 @@ impl Scanner {
         // Fix CN quotation mark pairing with depth-based nesting: well-formed
         // quotes use character-based depth tracking; misordered or
         // all-same-char quotes fall back to positional alternation. Paragraph
-        // breaks reset nesting depth.
-        fix_quote_pairing(text, issues);
+        // breaks reset nesting depth. It only rewrites suggestions on issues
+        // the curly scan emitted, so with that family off it has nothing to
+        // work on.
+        if cfg.quotes {
+            fix_quote_pairing(text, issues);
+        }
 
         // Validate structural nesting of existing TW bracket quotes: checks for
-        // mismatched, interleaved, and unclosed quotes per paragraph.
+        // mismatched, interleaved, and unclosed quotes per paragraph. The
+        // report sits outside the quotes family on purpose: turning quotes off
+        // says do not rewrite my quotation marks rather than do not tell me one
+        // is unclosed.
+        //
+        // The suggestion is a different matter. Every finding here suggests the
+        // empty string, so --fix deletes the mark the author wrote, which is
+        // exactly the rewrite the family was turned off to prevent. With the
+        // family off the findings stay and their suggestions go: an empty list
+        // makes the fixer skip the issue rather than decline it, so nothing is
+        // reported as a refused fix either.
+        let hierarchy_start = issues.len();
         validate_quote_hierarchy(text, excluded, issues);
+        if !cfg.quotes {
+            for issue in &mut issues[hierarchy_start..] {
+                issue.suggestions = Vec::new().into();
+            }
+        }
 
         // Compute AI signature score when any AI detection flag is active.
         let ai_signature = if cfg.ai_filler_detection

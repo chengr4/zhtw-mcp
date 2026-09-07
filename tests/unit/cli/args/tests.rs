@@ -125,6 +125,19 @@ fn lint_collects_files_and_defaults() {
 }
 
 #[test]
+fn off_is_repeatable_and_rejects_unknown_families() {
+    let lint = lint_of(&["lint", "--off", "punctuation", "--off", "variant", "a.md"]);
+    assert_eq!(
+        lint.off,
+        vec![
+            zhtw_mcp::rules::ruleset::RuleFamily::Punctuation,
+            zhtw_mcp::rules::ruleset::RuleFamily::Variant,
+        ]
+    );
+    assert!(err_of(&["lint", "--off", "unknown", "a.md"]).contains("punctuation"));
+}
+
+#[test]
 fn rhythm_is_a_bare_flag_that_composes() {
     let lint = lint_of(&["lint", "--rhythm", "a.md"]);
     assert!(lint.rhythm);

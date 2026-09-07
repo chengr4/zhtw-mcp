@@ -7,7 +7,7 @@ use crate::engine::excluded::ByteRange;
 use crate::engine::html_lang::excludes;
 use crate::engine::scan::{ContentType, Scanner};
 use crate::rules::loader::load_embedded_ruleset;
-use crate::rules::ruleset::{Issue, Profile, Severity};
+use crate::rules::ruleset::{Issue, Profile, RuleFamily, Severity};
 
 static SCANNER: OnceLock<Scanner> = OnceLock::new();
 
@@ -21,6 +21,7 @@ pub fn start() {
 struct ScanOptions {
     profile: Option<String>,
     relaxed: bool,
+    off: Vec<RuleFamily>,
     /// Runs of the text that carry a declared language, from the content
     /// script.  Only the page can see that a run sat under an ancestor with a
     /// lang attribute; which languages that takes out of the scan is decided
@@ -88,6 +89,7 @@ pub fn scan_text(text: &str, options_json: Option<String>) -> Result<String, JsV
     if options.relaxed {
         config = config.with_relaxed();
     }
+    config = config.with_disabled(&options.off);
 
     let excluded: Vec<ByteRange> = options
         .lang_spans

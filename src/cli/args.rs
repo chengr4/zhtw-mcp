@@ -75,6 +75,7 @@ pub(crate) struct LintArgs {
     pub(crate) max_errors: Option<usize>,
     pub(crate) max_warnings: Option<usize>,
     pub(crate) profile: Option<String>,
+    pub(crate) off: Vec<zhtw_mcp::rules::ruleset::RuleFamily>,
     pub(crate) content_type: Option<String>,
     pub(crate) exclude_patterns: Vec<String>,
     pub(crate) fix_mode: Option<zhtw_mcp::fixer::FixMode>,
@@ -113,6 +114,7 @@ impl Default for LintArgs {
             max_errors: None,
             max_warnings: None,
             profile: None,
+            off: Vec::new(),
             content_type: None,
             exclude_patterns: Vec::new(),
             fix_mode: None,
@@ -437,6 +439,17 @@ fn parse_lint(rest: &[String]) -> Result<(LintArgs, usize)> {
             "--profile" => {
                 i += 1;
                 lint.profile = Some(rest.get(i).context("--profile requires a value")?.clone());
+            }
+            "--off" => {
+                // Repeats are harmless: with_disabled only clears flags.
+                lint.off.push(enum_value(
+                    rest,
+                    i,
+                    "--off",
+                    &zhtw_mcp::rules::ruleset::RuleFamily::names(),
+                    zhtw_mcp::rules::ruleset::RuleFamily::from_str_strict,
+                )?);
+                i += 1;
             }
             "--content-type" => {
                 i += 1;

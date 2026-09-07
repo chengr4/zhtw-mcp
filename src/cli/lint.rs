@@ -24,6 +24,7 @@ pub(crate) struct LintBatchParams<'a> {
     pub(crate) max_errors: usize,
     pub(crate) max_warnings: Option<usize>,
     pub(crate) profile_name: Option<&'a str>,
+    pub(crate) off: &'a [zhtw_mcp::rules::ruleset::RuleFamily],
     pub(crate) content_type_override: Option<&'a str>,
     pub(crate) overrides_path: &'a Path,
     pub(crate) packs_dir: &'a Path,
@@ -145,6 +146,7 @@ fn build_lint_setup(
     cfg.translationese_domain = params.translationese_domain;
     cfg.document_genre = params.document_genre;
     cfg = cfg.with_register(params.register);
+    cfg = cfg.with_disabled(params.off);
 
     // Build scanner once for all files, merging overrides + active packs.
     let ruleset = zhtw_mcp::rules::loader::load_embedded_ruleset()?;

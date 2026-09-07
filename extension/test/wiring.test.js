@@ -137,3 +137,56 @@ test("the lang payload matches the struct the scanner deserializes it into", () 
     "langSpans emits different fields than LangSpan deserializes",
   );
 });
+
+// The popup is the only place a user can name a rule family, and the names are
+// decided in Rust: scan_text deserializes the off array into RuleFamily through
+// serde, which rejects an unknown variant, so a family renamed there and not
+// here fails the scan.  The CLI and the MCP tool reach the same names through
+// from_str_strict instead, and a unit test in src/config.rs pins those two
+// spellings to each other.  Reading the enum is how this side notices.
+const rulesetSource = readFileSync(
+  fileURLToPath(new URL("../../src/rules/ruleset.rs", import.meta.url)),
+  "utf8",
+);
+
+/// The family names RuleFamily::name() returns, in declaration order.
+function ruleFamilyNames(source) {
+  // src/rules/ruleset.rs defines name() on six enums, so the lookup has to
+  // start at the impl block rather than at the first match in the file.
+  const impl = source.indexOf("impl RuleFamily {");
+  assert.ok(impl !== -1, "impl RuleFamily not found in src/rules/ruleset.rs");
+  const body = /fn name\(self\) -> &'static str \{([\s\S]*?)\n    \}/.exec(
+    source.slice(impl),
+  );
+  assert.ok(body, "RuleFamily::name not found in src/rules/ruleset.rs");
+  return [...body[1].matchAll(/=>\s*"([a-z_]+)"/g)].map((match) => match[1]);
+}
+
+/// The values of the option elements inside one select in popup.html.
+function optionValuesOf(html, selectId) {
+  const block = new RegExp(
+    `<select id="${quote(selectId)}"[^>]*>([\\s\\S]*?)</select>`,
+  ).exec(html);
+  assert.ok(block, `select #${selectId} not found in popup.html`);
+  return [...block[1].matchAll(/value="([^"]+)"/g)].map((match) => match[1]);
+}
+
+test("the popup offers exactly the rule families the scanner accepts", () => {
+  const popupHtml = readFileSync(
+    fileURLToPath(new URL("../popup.html", import.meta.url)),
+    "utf8",
+  );
+  assert.deepEqual(
+    optionValuesOf(popupHtml, "off"),
+    ruleFamilyNames(rulesetSource),
+    "popup.html and RuleFamily disagree about the family names",
+  );
+
+  assert.ok(
+    rustFieldsOf(wasmSource, "ScanOptions").includes("off"),
+    "ScanOptions no longer has an off field",
+  );
+  for (const file of ["popup.js", "background.js"]) {
+    assert.match(src(file), /off\s*:/, `${file} does not send off`);
+  }
+});

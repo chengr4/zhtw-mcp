@@ -574,8 +574,8 @@ pub(crate) fn fix_quote_pairing(text: &str, issues: &mut [Issue]) {
     // already the "inner" quote level, mapping directly to TW 『/』. No depth
     // tracking needed: fix_quote_pairing for doubles handles the primary level.
     //
-    // (suggestions are already set to 『/』 by scan_cn_curly_quotes, so this is
-    // a no-op unless future logic needs to adjust them.)
+    // (suggestions are already set to 『/』 by scan_quotes, so this is a no-op
+    // unless future logic needs to adjust them.)
 }
 
 /// Stack-based quote hierarchy validator.

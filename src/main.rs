@@ -93,7 +93,7 @@ fn run(cli: Cli) -> Result<()> {
             let cwd = std::env::current_dir().unwrap_or_default();
             let project_cfg = match &config_path {
                 Some(p) => Some(zhtw_mcp::config::ProjectConfig::from_file(p)?),
-                None => zhtw_mcp::config::ProjectConfig::discover(&cwd),
+                None => zhtw_mcp::config::ProjectConfig::discover(&cwd)?,
             };
             let tm_path = project_cfg
                 .as_ref()
@@ -130,7 +130,7 @@ fn run(cli: Cli) -> Result<()> {
             let cwd = std::env::current_dir().unwrap_or_default();
             let project_cfg = match &config_path {
                 Some(p) => Some(zhtw_mcp::config::ProjectConfig::from_file(p)?),
-                None => zhtw_mcp::config::ProjectConfig::discover(&cwd),
+                None => zhtw_mcp::config::ProjectConfig::discover(&cwd)?,
             };
             let cfg_ref = project_cfg.as_ref();
             let overrides_path = overrides_path
@@ -153,6 +153,21 @@ fn run(cli: Cli) -> Result<()> {
     }
 }
 
+/// Merge a config list into the list the command line asked for, keeping the
+/// command line's order and dropping repeats.
+///
+/// The list-valued settings union rather than override, which is the one place
+/// the config file is not simply outranked: subtracting from a list would need
+/// an "un-set" spelling that nothing wants.  Stating that once keeps the three
+/// of them from drifting.
+fn union_config_list<T: Clone + PartialEq>(cli: &mut Vec<T>, config: Option<&Vec<T>>) {
+    for value in config.into_iter().flatten() {
+        if !cli.contains(value) {
+            cli.push(value.clone());
+        }
+    }
+}
+
 /// Merge `lint` flags with `.zhtw-mcp.toml`, then run the batch.  CLI flags win
 /// over config values, config values win over defaults.
 fn run_lint(
@@ -167,7 +182,7 @@ fn run_lint(
         Some(p) => Some(zhtw_mcp::config::ProjectConfig::from_file(p)?),
         None => {
             let cwd = std::env::current_dir().unwrap_or_default();
-            zhtw_mcp::config::ProjectConfig::discover(&cwd)
+            zhtw_mcp::config::ProjectConfig::discover(&cwd)?
         }
     };
 
@@ -181,6 +196,9 @@ fn run_lint(
         .or_else(|| cfg_ref.and_then(|c| c.profile.as_deref()));
     // CLI --relaxed flag overrides config file relaxed setting.
     let eff_relaxed = lint.relaxed || cfg_ref.and_then(|c| c.relaxed).unwrap_or(false);
+    // Family subtractions compose across the command line and project config.
+    let mut eff_off = lint.off;
+    union_config_list(&mut eff_off, cfg_ref.and_then(|c| c.off.as_ref()));
     // CLI --exempt-blockquotes flag OR "[markdown] exempt_blockquotes".
     let eff_exempt_blockquotes = lint.exempt_blockquotes
         || cfg_ref
@@ -199,24 +217,13 @@ fn run_lint(
         .max_warnings
         .or_else(|| cfg_ref.and_then(|c| c.max_warnings));
 
-    // Merge exclude patterns: CLI + config.
+    // Merge exclude patterns and packs: CLI + config.
     let mut exclude_patterns = lint.exclude_patterns;
-    if let Some(cfg_exclude) = cfg_ref.and_then(|c| c.exclude.as_ref()) {
-        for pat in cfg_exclude {
-            if !exclude_patterns.contains(pat) {
-                exclude_patterns.push(pat.clone());
-            }
-        }
-    }
-
-    // Merge packs: CLI + config.
-    if let Some(cfg_packs) = cfg_ref.and_then(|c| c.packs.as_ref()) {
-        for p in cfg_packs {
-            if !active_packs.contains(p) {
-                active_packs.push(p.clone());
-            }
-        }
-    }
+    union_config_list(
+        &mut exclude_patterns,
+        cfg_ref.and_then(|c| c.exclude.as_ref()),
+    );
+    union_config_list(&mut active_packs, cfg_ref.and_then(|c| c.packs.as_ref()));
 
     // Resolve TM path: config override > auto-discover from cwd.
     let eff_tm_path = cfg_ref
@@ -248,6 +255,7 @@ fn run_lint(
         max_errors: eff_max_errors,
         max_warnings: eff_max_warnings,
         profile_name: eff_profile,
+        off: &eff_off,
         content_type_override: eff_content_type,
         overrides_path: &eff_overrides,
         packs_dir: &packs_dir,

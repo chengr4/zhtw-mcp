@@ -2379,7 +2379,9 @@
         // Verify that config() returns sensible values for each profile.
         let default_cfg = Profile::Base.config();
         assert!(default_cfg.spelling);
-        assert!(default_cfg.basic_punctuation);
+        assert!(default_cfg.punctuation);
+        assert!(default_cfg.quotes);
+        assert!(default_cfg.spacing);
         assert!(default_cfg.colon_enforcement);
         assert!(!default_cfg.variant_normalization);
         assert!(!default_cfg.range_en_dash);
@@ -2397,6 +2399,344 @@
         assert!(!relaxed_cfg.variant_normalization);
         assert!(relaxed_cfg.range_en_dash);
         assert!(!relaxed_cfg.grammar_checks);
+    }
+
+    #[test]
+    fn public_punctuation_families_disable_independently() {
+        let scanner = Scanner::new(vec![], vec![]);
+        let text = "中文,中文“詞”中文abc";
+        let all = scan_with_all(&scanner, text);
+        assert!(all.iter().any(|issue| issue.found == ","));
+        assert!(all.iter().any(|issue| issue.found == "“"));
+        assert!(all.iter().any(|issue| issue.context.as_deref().is_some_and(|c| c.contains("中英文"))));
+
+        let punctuation = scan_without(&scanner, text, RuleFamily::Punctuation);
+        assert!(!punctuation.iter().any(|issue| issue.found == ","));
+        assert!(punctuation.iter().any(|issue| issue.found == "“"));
+        assert!(punctuation.iter().any(|issue| issue.context.as_deref().is_some_and(|c| c.contains("中英文"))));
+
+        let quotes = scan_without(&scanner, text, RuleFamily::Quotes);
+        assert!(quotes.iter().any(|issue| issue.found == ","));
+        assert!(!quotes.iter().any(|issue| issue.found == "“"));
+        assert!(quotes.iter().any(|issue| issue.context.as_deref().is_some_and(|c| c.contains("中英文"))));
+
+        let spacing = scan_without(&scanner, text, RuleFamily::Spacing);
+        assert!(spacing.iter().any(|issue| issue.found == ","));
+        assert!(spacing.iter().any(|issue| issue.found == "“"));
+        assert!(!spacing.iter().any(|issue| issue.context.as_deref().is_some_and(|c| c.contains("中英文"))));
+    }
+
+    #[test]
+    fn quotes_family_owns_ascii_conversion_but_not_hierarchy_validation() {
+        let scanner = Scanner::new(vec![], vec![]);
+        let text = "他說\"你好\"，還有「未關閉";
+        let enabled = scan_with_all(&scanner, text);
+        assert_eq!(enabled.iter().filter(|issue| issue.found == "\"").count(), 2);
+        assert!(enabled
+            .iter()
+            .any(|issue| issue.context.as_deref() == Some("段落結束時「」未關閉")));
+
+        let punctuation_disabled = scan_without(&scanner, text, RuleFamily::Punctuation);
+        assert_eq!(
+            punctuation_disabled
+                .iter()
+                .filter(|issue| issue.found == "\"")
+                .count(),
+            2
+        );
+        assert!(punctuation_disabled
+            .iter()
+            .any(|issue| issue.context.as_deref() == Some("段落結束時「」未關閉")));
+
+        let disabled = scan_without(&scanner, text, RuleFamily::Quotes);
+        assert!(!disabled.iter().any(|issue| issue.found == "\""));
+
+        // Hierarchy validation still reports a quotation the author left
+        // unclosed, which the family says nothing about.
+        let unclosed = |issues: &[Issue]| {
+            issues
+                .iter()
+                .find(|issue| issue.context.as_deref() == Some("段落結束時「」未關閉"))
+                .expect("the unclosed quotation is reported")
+                .suggestions
+                .to_vec()
+        };
+        assert!(disabled
+            .iter()
+            .any(|issue| issue.context.as_deref() == Some("段落結束時「」未關閉")));
+
+        // What it must not keep is the suggestion. It is the empty string, so
+        // --fix would delete the 「 the author wrote, which is the rewrite the
+        // family was turned off to prevent.
+        assert_eq!(unclosed(&enabled), vec![String::new()]);
+        assert!(unclosed(&disabled).is_empty());
+    }
+
+    #[test]
+    fn colon_and_punctuation_families_disable_independently() {
+        // Both families are decided in one walk over the same bytes, so each
+        // one has to survive the other going quiet.
+        let scanner = Scanner::new(vec![], vec![]);
+        let text = "說明:內容,結束";
+        let all = scan_with_all(&scanner, text);
+        assert!(all.iter().any(|issue| issue.found == ":"));
+        assert!(all.iter().any(|issue| issue.found == ","));
+
+        let punctuation_off = scan_without(&scanner, text, RuleFamily::Punctuation);
+        assert!(punctuation_off.iter().any(|issue| issue.found == ":"));
+        assert!(!punctuation_off.iter().any(|issue| issue.found == ","));
+
+        let colon_off = scan_without(&scanner, text, RuleFamily::Colon);
+        assert!(!colon_off.iter().any(|issue| issue.found == ":"));
+        assert!(colon_off.iter().any(|issue| issue.found == ","));
+
+        // With both off the walk is skipped entirely, which must not take the
+        // rest of the scan with it.
+        let both_off = scan_off(
+            &scanner,
+            Profile::Base,
+            text,
+            &[RuleFamily::Punctuation, RuleFamily::Colon],
+        );
+        assert!(!both_off
+            .iter()
+            .any(|issue| issue.found == ":" || issue.found == ","));
+    }
+
+    #[test]
+    fn spelling_family_does_not_carry_the_other_lexical_families() {
+        // One pass over the rule database serves four families. Turning
+        // spelling off must leave the rule types that answer to variant, ai and
+        // translationese still firing.
+        let rules = vec![
+            SpellingRule::new("軟件", vec!["軟體".into()], RuleType::CrossStrait),
+            variant_rule("裏", "裡"),
+            SpellingRule::new("值得注意的是", vec![String::new()], RuleType::AiFiller),
+            SpellingRule::new("進行", vec!["做".into()], RuleType::Translationese),
+        ];
+        let scanner = Scanner::new(rules, vec![]);
+        let text = "在裏面的東西都是好的軟件，值得注意的是進行測試";
+
+        // By the rule that emitted it, not by issue type: the structural
+        // detectors report translationese too, and a finding from one of those
+        // would satisfy the assertion without the rule database being consulted
+        // at all.
+        let fired = |issues: &[Issue], found: &str| issues.iter().any(|i| i.found == found);
+
+        let all = scan_off(&scanner, Profile::Strict, text, &[]);
+        assert!(fired(&all, "裏"));
+        assert!(fired(&all, "軟件"));
+        assert!(fired(&all, "值得注意的是"));
+        assert!(fired(&all, "進行"));
+
+        let spelling_off = scan_off(&scanner, Profile::Strict, text, &[RuleFamily::Spelling]);
+        assert!(fired(&spelling_off, "裏"), "variant went with spelling");
+        assert!(
+            fired(&spelling_off, "值得注意的是"),
+            "ai filler went with spelling"
+        );
+        assert!(
+            fired(&spelling_off, "進行"),
+            "translationese went with spelling"
+        );
+        assert!(!fired(&spelling_off, "軟件"));
+
+        let variant_off = scan_off(&scanner, Profile::Strict, text, &[RuleFamily::Variant]);
+        assert!(!variant_off
+            .iter()
+            .any(|i| i.rule_type == IssueType::Variant));
+        assert!(variant_off
+            .iter()
+            .any(|i| i.rule_type == IssueType::CrossStrait));
+    }
+
+    /// Scan "text" with "profile" resolved and the named families subtracted,
+    /// which is the order the CLI and the MCP tool apply "--off" in.
+    fn scan_off(
+        scanner: &Scanner,
+        profile: Profile,
+        text: &str,
+        families: &[RuleFamily],
+    ) -> Vec<Issue> {
+        scanner
+            .scan_for_content_type_with_config(
+                text,
+                ContentType::Plain,
+                profile.config().with_disabled(families),
+            )
+            .issues
+    }
+
+    /// The base profile with one family subtracted, the common case.
+    fn scan_without(scanner: &Scanner, text: &str, family: RuleFamily) -> Vec<Issue> {
+        scan_off(scanner, Profile::Base, text, &[family])
+    }
+
+    /// The base profile with every family still on.
+    fn scan_with_all(scanner: &Scanner, text: &str) -> Vec<Issue> {
+        scan_off(scanner, Profile::Base, text, &[])
+    }
+
+    /// One family goes quiet while another keeps firing.
+    ///
+    /// The shape every family test wants: the baseline reports both, the
+    /// subtraction takes the family's own finding away, and the control finding
+    /// is still there to say the scan itself did not stop.
+    fn assert_family_isolated(
+        scanner: &Scanner,
+        text: &str,
+        family: RuleFamily,
+        hit: impl Fn(&Issue) -> bool,
+        control: impl Fn(&Issue) -> bool,
+    ) {
+        let all = scan_with_all(scanner, text);
+        assert!(
+            all.iter().any(&hit),
+            "the fixture reports nothing for {family:?}: {all:?}"
+        );
+        assert!(
+            all.iter().any(&control),
+            "the fixture carries no control finding: {all:?}"
+        );
+
+        let off = scan_without(scanner, text, family);
+        assert!(
+            !off.iter().any(&hit),
+            "{family:?} still fires with the family off: {off:?}"
+        );
+        assert!(
+            off.iter().any(&control),
+            "{family:?} took the control finding down with it: {off:?}"
+        );
+    }
+
+    #[test]
+    fn casing_family_disables_independently() {
+        assert_family_isolated(
+            &Scanner::new(vec![], sample_case_rules()),
+            "我用 Javascript,寫程式",
+            RuleFamily::Casing,
+            |i| i.rule_type == IssueType::Case,
+            |i| i.found == ",",
+        );
+    }
+
+    #[test]
+    fn dunhao_family_disables_independently() {
+        let scanner = empty_scanner();
+        let text = "紅，橙，黃，綠，藍";
+        let dunhao = |issues: &[Issue]| {
+            issues
+                .iter()
+                .any(|i| i.suggestions.contains(&"、".to_string()))
+        };
+        assert!(dunhao(&scan_with_all(&scanner, text)));
+
+        let off = scan_without(&scanner, text, RuleFamily::Dunhao);
+        assert!(!dunhao(&off));
+        // A different family reading the same enumeration commas is untouched.
+        assert!(dunhao(&scan_without(&scanner, text, RuleFamily::Punctuation)));
+    }
+
+    #[test]
+    fn range_family_disables_independently() {
+        assert_family_isolated(
+            &empty_scanner(),
+            "第一~第五,結束",
+            RuleFamily::Range,
+            |i| i.found == "~",
+            |i| i.found == ",",
+        );
+    }
+
+    #[test]
+    fn ellipsis_family_disables_independently() {
+        assert_family_isolated(
+            &empty_scanner(),
+            "等一下。。。再說,好嗎",
+            RuleFamily::Ellipsis,
+            |i| i.found == "。。。",
+            |i| i.found == ",",
+        );
+    }
+
+    #[test]
+    fn grammar_family_disables_independently() {
+        // The control is another structural detector rather than a punctuation
+        // mark: one gate standing for two families in that stage is the shape
+        // that hid the spelling and colon defects.
+        assert_family_isolated(
+            &empty_scanner(),
+            "你是不是學生嗎？20 世紀最重要的發現之一。",
+            RuleFamily::Grammar,
+            |i| i.rule_type == IssueType::Grammar,
+            |i| i.phase_family.is_some_and(|(f, _)| f == PhaseFamily::YiZhi),
+        );
+    }
+
+    #[test]
+    fn ai_family_disables_independently() {
+        let rules = vec![
+            SpellingRule::new("值得注意的是", vec![String::new()], RuleType::AiFiller),
+            SpellingRule::new("軟件", vec!["軟體".into()], RuleType::CrossStrait),
+        ];
+        // Same pass, different family: the vocabulary rule is the control.
+        assert_family_isolated(
+            &Scanner::new(rules, vec![]),
+            "值得注意的是這套軟件很好用",
+            RuleFamily::Ai,
+            |i| i.rule_type == IssueType::AiStyle,
+            |i| i.rule_type == IssueType::CrossStrait,
+        );
+    }
+
+    #[test]
+    fn translationese_family_disables_independently() {
+        assert_family_isolated(
+            &empty_scanner(),
+            "20 世紀最重要的發現之一,確實如此",
+            RuleFamily::Translationese,
+            |i| i.phase_family.is_some_and(|(f, _)| f == PhaseFamily::YiZhi),
+            |i| i.found == ",",
+        );
+    }
+
+    #[test]
+    fn rhythm_family_disables_independently() {
+        let scanner = empty_scanner();
+
+        // 38 CJK characters with no internal pause, plus a half-width comma so
+        // another family has something to report either way.
+        let text = "這份報告詳細說明了整個系統在過去一年之中所有功能的演進過程與後續規劃方向。還有,結束";
+        let rhythmic = |issues: &[Issue]| {
+            issues.iter().any(|i| {
+                i.phase_family
+                    .is_some_and(|(f, _)| f == PhaseFamily::RhythmLongSentence)
+            })
+        };
+
+        // Rhythm is opt-in, so the baseline here turns it on rather than off.
+        let on = scanner
+            .scan_for_content_type_with_config(
+                text,
+                ContentType::Plain,
+                Profile::Base.config().with_rhythm(true),
+            )
+            .issues;
+        assert!(rhythmic(&on));
+
+        let off = scanner
+            .scan_for_content_type_with_config(
+                text,
+                ContentType::Plain,
+                Profile::Base
+                    .config()
+                    .with_rhythm(true)
+                    .with_disabled(&[RuleFamily::Rhythm]),
+            )
+            .issues;
+        assert!(!rhythmic(&off));
+        assert!(off.iter().any(|i| i.found == ","));
     }
 
     // ellipsis normalization tests

@@ -14,7 +14,11 @@ impl Scanner {
     /// in a CJK context.
     ///
     /// Handles: , . ! ? ; ( ) : (2.1 + 2.2).
-    /// Colon enforcement is profile-dependent: relaxed allows half-width :.
+    ///
+    /// Two public families share this walk.  The colon arm answers
+    /// "colon_enforcement" and every other mark answers "punctuation", so
+    /// turning either family off leaves the other one scanning.  The caller
+    /// skips the walk through "punctuation_pass_enabled" when both are off.
     pub(crate) fn scan_punctuation(&self, em: &mut Emitter<'_>, cfg: &ProfileConfig) {
         let text = em.text;
         let excluded = em.excluded;
@@ -23,20 +27,15 @@ impl Scanner {
         let bytes = text.as_bytes();
         let len = bytes.len();
 
-        // Straight double quotes are decided as pairs over the raw text, ahead
-        // of the walk below, so that a quotation gets both halves converted or
-        // neither. The plan ascends, and so does the walk, so one cursor keeps
-        // the lookup at O(1) per mark.
-        let ascii_quotes = plan_quote_conversions(text, excluded, QuoteKind::AsciiDouble);
-        let mut ascii_cursor = 0usize;
-
         for (i, &b) in bytes.iter().enumerate() {
             // Cheap prefilter so the exclusion range check below runs only for
             // candidate bytes. The dispatch match further down repeats this
             // byte set; a byte added here but not there is skipped, not a
-            // panic.
+            // panic. The colon belongs to its own family, so the other marks
+            // drop out here when only colon enforcement is left on.
             match b {
-                b',' | b'.' | b'!' | b'?' | b';' | b'(' | b')' | b':' | b'"' => {}
+                b':' if cfg.colon_enforcement => {}
+                b',' | b'.' | b'!' | b'?' | b';' | b'(' | b')' if cfg.punctuation => {}
                 _ => continue,
             }
 
@@ -142,10 +141,8 @@ impl Scanner {
                     issues.push(punct_issue(i, found, suggestion, context));
                 }
                 b':' => {
-                    // Colon enforcement controlled by profile config.
-                    if !cfg.colon_enforcement {
-                        continue;
-                    }
+                    // Colon enforcement is the prefilter's business: a colon
+                    // only reaches here when its family is on.
                     if colon_is_notation(bytes, i) {
                         continue;
                     }
@@ -158,28 +155,6 @@ impl Scanner {
                         "\u{FF1A}",
                         "繁體中文應使用全形冒號「：」而非半形「:」",
                     ));
-                }
-                b'"' => {
-                    while ascii_cursor < ascii_quotes.len() && ascii_quotes[ascii_cursor].offset < i
-                    {
-                        ascii_cursor += 1;
-                    }
-                    let Some(mark) = ascii_quotes.get(ascii_cursor).filter(|m| m.offset == i)
-                    else {
-                        continue;
-                    };
-                    let suggestion = if mark.opening {
-                        "\u{300c}" // 「
-                    } else {
-                        "\u{300d}" // 」
-                    };
-                    issues.push(punct_issue(
-                        i,
-                        "\"",
-                        suggestion,
-                        "繁體中文應使用「」引號而非半形雙引號「\"」",
-                    ));
-                    ascii_cursor += 1;
                 }
 
                 // Not a candidate byte: the prefilter above already skipped it.
@@ -259,11 +234,13 @@ impl Scanner {
         }
     }
 
-    /// CN curly quotation mark detection.
+    /// Quotation mark conversion: the whole "quotes" family.
     ///
-    /// Scans for CN-style curly double quotes \u{201c}/\u{201d} and single
-    /// quotes \u{2018}/\u{2019}.  These are multi-byte UTF-8 characters that
-    /// the byte-level ASCII scan in scan_punctuation() cannot detect.
+    /// Scans for CN-style curly double quotes \u{201c}/\u{201d}, single quotes
+    /// \u{2018}/\u{2019}, and straight ASCII double quotes.  The curly marks
+    /// are multi-byte UTF-8 characters that the byte-level walk in
+    /// scan_punctuation() cannot detect, and the ASCII ones are decided as
+    /// pairs rather than per byte, so none of the three belongs in that walk.
     ///
     /// The conversion decision belongs to the pair, not the mark:
     /// [`plan_quote_conversions`] pairs over the raw text and converts a pair
@@ -276,24 +253,34 @@ impl Scanner {
     /// Double quotes are emitted as issues; `fix_quote_pairing()` in quotes.rs
     /// then reassigns their suggestions with depth-based nesting (「」/『』).
     /// Single quotes map directly to 『/』 (secondary TW bracket quotes).
-    pub(crate) fn scan_cn_curly_quotes(&self, em: &mut Emitter<'_>) {
+    ///
+    /// Straight ASCII double quotes are decided here too, rather than in the
+    /// half-width punctuation walk: they are the same conversion, planned by
+    /// the same pairing pass, and they belong to the same public family, so
+    /// splitting them would let one spelling of a quotation be reported while
+    /// the other is not.
+    pub(crate) fn scan_quotes(&self, em: &mut Emitter<'_>) {
         let text = em.text;
         let excluded = em.excluded;
         let issues = &mut *em.issues;
 
-        let doubles = plan_quote_conversions(text, excluded, QuoteKind::CurlyDouble);
-        let singles = plan_quote_conversions(text, excluded, QuoteKind::CurlySingle);
-        if doubles.is_empty() && singles.is_empty() {
+        // The pipeline skips its own sort when the issues already ascend, so
+        // the plans have to be merged rather than concatenated.
+        let mut marks: Vec<(QuoteMark, QuoteKind)> = [
+            QuoteKind::CurlyDouble,
+            QuoteKind::CurlySingle,
+            QuoteKind::AsciiDouble,
+        ]
+        .into_iter()
+        .flat_map(|kind| {
+            plan_quote_conversions(text, excluded, kind)
+                .into_iter()
+                .map(move |mark| (mark, kind))
+        })
+        .collect();
+        if marks.is_empty() {
             return;
         }
-
-        // The pipeline skips its own sort when the issues already ascend, so
-        // the two plans have to be merged rather than concatenated.
-        let mut marks: Vec<(QuoteMark, QuoteKind)> = doubles
-            .into_iter()
-            .map(|m| (m, QuoteKind::CurlyDouble))
-            .chain(singles.into_iter().map(|m| (m, QuoteKind::CurlySingle)))
-            .collect();
         marks.sort_by_key(|(m, _)| m.offset);
 
         for (mark, kind) in marks {
@@ -305,6 +292,14 @@ impl Scanner {
                 (QuoteKind::CurlyDouble, false) => (
                     "\u{300d}", // 」
                     "繁體中文應使用「」引號而非中國大陸式「\u{201c}\u{201d}」",
+                ),
+                (QuoteKind::AsciiDouble, true) => (
+                    "\u{300c}", // 「
+                    "繁體中文應使用「」引號而非半形雙引號「\"」",
+                ),
+                (QuoteKind::AsciiDouble, false) => (
+                    "\u{300d}", // 」
+                    "繁體中文應使用「」引號而非半形雙引號「\"」",
                 ),
                 (_, true) => (
                     "\u{300e}", // 『
