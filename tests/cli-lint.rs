@@ -27,12 +27,16 @@ fn run_lint_stdin(extra_args: &[&str], input: &str) -> Output {
         .env_remove("RUST_LOG")
         .spawn()
         .and_then(|mut child| {
-            child
-                .stdin
-                .take()
-                .unwrap()
-                .write_all(input.as_bytes())
-                .unwrap();
+            // A run that rejects its arguments exits before it reads stdin, so
+            // this write races that exit and can land on a closed pipe. That is
+            // the command under test behaving correctly, not a failure, and the
+            // verdict belongs to wait_with_output below. Without this the whole
+            // suite flakes under parallel load.
+            match child.stdin.take().unwrap().write_all(input.as_bytes()) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {}
+                Err(e) => return Err(e),
+            }
             child.wait_with_output()
         })
         .unwrap()
