@@ -452,9 +452,6 @@ fn clamp_at_excluded(
 /// Like surrounding_window but clamps the window at excluded-range
 /// boundaries so that context clues inside a code block (or other excluded
 /// region) cannot influence rules that fire outside it.
-// Only the native-gated fixer calls this, so it is dead in every build without
-// that feature, not just the browser-wasm one.
-#[cfg_attr(not(feature = "native"), allow(dead_code))]
 pub(crate) fn surrounding_window_bounded<'a>(
     text: &'a str,
     start: usize,

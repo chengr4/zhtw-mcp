@@ -9,7 +9,6 @@ pub mod cache;
 #[cfg(feature = "native")]
 pub mod config;
 pub mod engine;
-#[cfg(feature = "native")]
 pub mod fixer;
 #[cfg(feature = "native")]
 pub mod mcp;

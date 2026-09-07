@@ -261,10 +261,13 @@ fn fix_verdict<'a>(
             let window =
                 crate::engine::scan::surrounding_window_bounded(text, issue.offset, end, excluded);
 
+            // Iterating the Option rather than unwrapping it: has_clues above
+            // already proved it is Some, and an empty list counts zero clues,
+            // which declines exactly as a missing one would.
             let clue_strs: Vec<&str> = issue
                 .context_clues
-                .as_ref()
-                .unwrap()
+                .as_deref()
+                .unwrap_or(&[])
                 .iter()
                 .map(|s| s.as_str())
                 .collect();
