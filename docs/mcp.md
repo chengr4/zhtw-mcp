@@ -52,6 +52,7 @@ Unified lint / fix / gate for zh-TW text.
 | `max_errors` | integer | Reject if residual errors exceed threshold |
 | `max_warnings` | integer | Reject if residual warnings exceed threshold |
 | `profile` | `"base"` / `"strict"` | Rule profile |
+| `off` | array of rule-family names | Disable named families after profile and capability flags resolve |
 | `relaxed` | boolean | Relax colon and other UI-string-level rules |
 | `content_type` | `"plain"` / `"markdown"` / `"markdown-scan-code"` / `"yaml"` | Content type (`markdown-scan-code` also lints inside code blocks) |
 | `political_stance` | `"roc_centric"` / `"neutral"` / `"international"` | Political stance filter |
@@ -168,6 +169,17 @@ governs egress, not linting, and the server is fully functional offline.
 
 Build with `--no-default-features --features native` to remove the calibration
 code entirely, at the cost of also dropping the `verify` argument.
+
+## Project config in server mode
+
+`serve` reads the same `.zhtw-mcp.toml` that `lint` discovers, walking up from
+the working directory to the `.git` root, so a host needs no flags to get the
+project's `overrides`, `suppressions` and `translation_memory` stores. A config
+that does not parse, or that carries an unknown top-level field, is an error
+rather than a silent fallback to defaults: the server exits 2 at startup and
+names the file on stderr instead of starting with settings the project did not
+ask for. A host that reports the server as failing to launch should read that
+line first.
 
 ## Resources
 

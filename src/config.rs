@@ -8,12 +8,14 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
+use crate::rules::ruleset::RuleFamily;
+
 /// Config file name.
 const CONFIG_FILENAME: &str = ".zhtw-mcp.toml";
 
 /// Parsed project config.
 #[derive(Debug, Default, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct ProjectConfig {
     pub profile: Option<String>,
     pub relaxed: Option<bool>,
@@ -26,6 +28,7 @@ pub struct ProjectConfig {
     pub suppressions: Option<String>,
     pub packs: Option<Vec<String>>,
     pub translation_memory: Option<String>,
+    pub off: Option<Vec<RuleFamily>>,
     pub markdown: Option<MarkdownConfig>,
     pub glossary: Option<GlossaryConfig>,
 }
@@ -65,19 +68,13 @@ impl ProjectConfig {
     ///
     /// Walks from start_dir upward, stopping at a .git directory or
     /// filesystem root.  Returns None if no config file is found.
-    pub fn discover(start_dir: &Path) -> Option<Self> {
-        let path = find_config_file(start_dir)?;
-        let content = std::fs::read_to_string(&path).ok()?;
-        match toml::from_str::<ProjectConfig>(&content) {
-            Ok(cfg) => {
-                tracing::info!("loaded config from {}", path.display());
-                Some(cfg)
-            }
-            Err(e) => {
-                tracing::warn!("failed to parse {}: {}", path.display(), e);
-                None
-            }
-        }
+    pub fn discover(start_dir: &Path) -> anyhow::Result<Option<Self>> {
+        let Some(path) = find_config_file(start_dir) else {
+            return Ok(None);
+        };
+        let cfg = Self::from_file(&path)?;
+        tracing::info!("loaded config from {}", path.display());
+        Ok(Some(cfg))
     }
 
     /// Load from an explicit path (--config flag).

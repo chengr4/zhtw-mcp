@@ -1,5 +1,5 @@
 use super::*;
-use crate::rules::ruleset::Tier2Outcome;
+use crate::rules::ruleset::{RuleFamily, Tier2Outcome};
 use rmcp::model::ErrorCode;
 
 /// Tool annotations must serialize with the MCP-spec `*Hint` wire names;
@@ -641,6 +641,7 @@ fn every_value_the_schema_advertises_actually_parses() {
         "document_genre",
         "register",
         "ai_threshold",
+        "off",
     ] {
         assert!(
             !accepted_values(field).is_empty(),
@@ -658,6 +659,13 @@ fn every_value_the_schema_advertises_actually_parses() {
             );
         }
     }
+
+    for family in accepted_values("off") {
+        assert!(
+            parse_off(&json!({ "off": [family] })).is_ok(),
+            "the schema advertises off={family:?} but the parser rejects it"
+        );
+    }
 }
 
 #[test]
@@ -665,6 +673,23 @@ fn a_rejected_value_is_told_what_the_schema_allows() {
     let err = enum_param_error("profile", "nonsense");
     let accepted = err.data.as_ref().and_then(|d| d.get("accepted")).cloned();
     assert_eq!(accepted, Some(json!(["base", "strict"])));
+}
+
+#[test]
+fn a_rejected_off_family_is_told_the_family_list() {
+    // An array parameter keeps its enum one level down, on the item schema.
+    // Reading the top level only would name no family at all, which tells the
+    // client that nothing is accepted.
+    let err = parse_off(&json!({ "off": ["punctuaton"] })).expect_err("a typo is rejected");
+    let accepted = err
+        .data
+        .as_ref()
+        .and_then(|d| d.get("accepted"))
+        .and_then(|v| v.as_array())
+        .cloned()
+        .expect("the rejection carries the accepted list");
+    assert!(accepted.contains(&json!("punctuation")));
+    assert_eq!(accepted.len(), RuleFamily::ALL.len());
 }
 
 #[test]
@@ -680,6 +705,7 @@ fn schema_documents_every_parameter_the_tool_takes() {
         "max_errors",
         "max_warnings",
         "profile",
+        "off",
         "relaxed",
         "exempt_blockquotes",
         "content_type",

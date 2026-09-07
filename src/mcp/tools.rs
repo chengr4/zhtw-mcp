@@ -339,6 +339,7 @@ impl Server {
             ref translationese_domain_opt,
             ref document_genre_opt,
             ref register_opt,
+            ref off,
             ..
         } = params;
 
@@ -393,6 +394,7 @@ impl Server {
                 register: register_opt.as_deref(),
                 ai_threshold,
                 rhythm,
+                off,
             },
         )?;
 
@@ -867,9 +869,15 @@ fn reject_unknown_params(args: &Value) -> Option<ErrorData> {
 /// Empty for a parameter the schema does not constrain to a list, which is
 /// what `param_error` is for.
 fn accepted_values(field: &str) -> Vec<&'static str> {
-    input_schema_properties()
-        .get(field)
-        .and_then(|prop| prop.get("enum"))
+    let Some(prop) = input_schema_properties().get(field) else {
+        return Vec::new();
+    };
+
+    // An array parameter carries its enum on the item schema: the array itself
+    // has no fixed set of values, its entries do. Reading only the top level
+    // would hand the client an empty accepted list for such a field.
+    prop.get("enum")
+        .or_else(|| prop.get("items").and_then(|items| items.get("enum")))
         .and_then(|values| values.as_array())
         .map(|values| values.iter().filter_map(Value::as_str).collect())
         .unwrap_or_default()
@@ -984,6 +992,7 @@ struct CheckParams<'a> {
     /// the CLI: the tool exposes it so an agent can ask for the same advice a
     /// human gets from --rhythm.
     rhythm: bool,
+    off: Vec<crate::rules::ruleset::RuleFamily>,
     glossary: crate::rules::glossary::ProjectGlossary,
     consistency_requested: bool,
     include_telemetry: bool,
@@ -1018,6 +1027,7 @@ impl<'a> CheckParams<'a> {
             relaxed: parse_flag(args, "relaxed"),
             exempt_blockquotes: parse_flag(args, "exempt_blockquotes"),
             rhythm: parse_flag(args, "rhythm"),
+            off: parse_off(args)?,
             glossary: parse_glossary(args),
             consistency_requested: parse_flag(args, "consistency"),
             include_telemetry: parse_flag(args, "include_telemetry"),
@@ -1034,6 +1044,34 @@ fn parse_flag_opt(args: &Value, field: &str) -> Option<bool> {
 /// A boolean argument that defaults to false when absent or malformed.
 fn parse_flag(args: &Value, field: &str) -> bool {
     parse_flag_opt(args, field).unwrap_or(false)
+}
+
+/// Parse public rule-family subtractions.  The schema guides regular clients,
+/// but this remains strict because direct JSON-RPC calls bypass it.
+fn parse_off(args: &Value) -> ParamResult<Vec<crate::rules::ruleset::RuleFamily>> {
+    let Some(value) = args.get("off") else {
+        return Ok(Vec::new());
+    };
+    let values = value.as_array().ok_or_else(|| {
+        ErrorData::invalid_params(
+            "'off' must be an array of rule family names",
+            Some(json!({ "field": "off", "expected_type": "array" })),
+        )
+    })?;
+    // Repeats are harmless: with_disabled only clears flags.
+    values
+        .iter()
+        .map(|entry| {
+            let name = entry.as_str().ok_or_else(|| {
+                ErrorData::invalid_params(
+                    "'off' entries must be strings",
+                    Some(json!({ "field": "off", "expected_type": "string" })),
+                )
+            })?;
+            crate::rules::ruleset::RuleFamily::from_str_strict(name)
+                .ok_or_else(|| enum_param_error("off", name))
+        })
+        .collect()
 }
 
 /// Parse the optional "fix_mode" field from tool arguments.
@@ -2003,6 +2041,7 @@ struct CheckFlags<'a> {
     register: Option<&'a str>,
     ai_threshold: Option<&'a str>,
     rhythm: bool,
+    off: &'a [crate::rules::ruleset::RuleFamily],
 }
 
 /// Fold the profile base and the caller's capability flags into one
@@ -2080,6 +2119,7 @@ fn build_check_config(
             }
         };
     }
+    cfg = cfg.with_disabled(flags.off);
     Ok(cfg)
 }
 
@@ -2758,6 +2798,17 @@ fn input_schema_properties() -> &'static JsonObject {
         props.insert("relaxed".into(), json!({
                 "type": "boolean",
                 "description": "Capability flag for software UI strings: disables colon enforcement, dunhao detection, grammar checks; uses en-dash for ranges"
+            }));
+        props.insert("off".into(), json!({
+                "type": "array",
+                "items": {
+                    "type": "string",
+                    "enum": crate::rules::ruleset::RuleFamily::ALL
+                        .iter()
+                        .map(|family| family.name())
+                        .collect::<Vec<_>>(),
+                },
+                "description": "Disable named rule families after the profile and capability flags resolve"
             }));
         props.insert("exempt_blockquotes".into(), json!({
                 "type": "boolean",

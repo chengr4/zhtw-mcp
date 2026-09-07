@@ -15,7 +15,10 @@ impl Scanner {
     ///
     /// Handles: , . ! ? ; ( ) : (2.1 + 2.2).
     ///
-    /// Colon enforcement is profile-dependent: relaxed allows half-width :.
+    /// Two public families share this walk.  The colon arm answers
+    /// "colon_enforcement" and every other mark answers "punctuation", so
+    /// turning either family off leaves the other one scanning.  The caller
+    /// skips the walk through "punctuation_pass_enabled" when both are off.
     pub(crate) fn scan_punctuation(&self, em: &mut Emitter<'_>, cfg: &ProfileConfig) {
         let text = em.text;
         let excluded = em.excluded;
@@ -31,7 +34,7 @@ impl Scanner {
             // panic. The colon belongs to its own family, so the other marks
             // drop out here when only colon enforcement is left on.
             match b {
-                b':' => {}
+                b':' if cfg.colon_enforcement => {}
                 b',' | b'.' | b'!' | b'?' | b';' | b'(' | b')' if cfg.punctuation => {}
                 _ => continue,
             }
@@ -138,10 +141,8 @@ impl Scanner {
                     issues.push(punct_issue(i, found, suggestion, context));
                 }
                 b':' => {
-                    // Colon enforcement controlled by profile config.
-                    if !cfg.colon_enforcement {
-                        continue;
-                    }
+                    // Colon enforcement is the prefilter's business: a colon
+                    // only reaches here when its family is on.
                     if colon_is_notation(bytes, i) {
                         continue;
                     }

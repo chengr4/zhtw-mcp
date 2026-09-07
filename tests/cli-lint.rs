@@ -586,6 +586,43 @@ fn cli_lint_config_cli_overrides_config() {
 }
 
 #[test]
+fn cli_lint_off_unions_config_and_cli_families() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("test.md"), "中文,裏面").unwrap();
+    std::fs::write(
+        dir.path().join(".zhtw-mcp.toml"),
+        "profile = \"strict\"\noff = [\"punctuation\"]\n",
+    )
+    .unwrap();
+
+    let output = Command::new(binary_path())
+        .current_dir(dir.path())
+        .args(["lint", "test.md", "--off", "variant", "--format", "json"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(report["issues"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn cli_lint_rejects_an_invalid_discovered_config() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("test.md"), "正確的軟體").unwrap();
+    std::fs::write(dir.path().join(".zhtw-mcp.toml"), "off = [\"typo\"]\n").unwrap();
+
+    let output = Command::new(binary_path())
+        .current_dir(dir.path())
+        .args(["lint", "test.md"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("parse config"));
+}
+
+#[test]
 fn cli_lint_config_ignore_terms_downgrades_to_info() {
     // ignore_terms in .zhtw-mcp.toml keeps the term visible but drops it to
     // Info, so it stops failing the warning gate. Same semantics as the MCP

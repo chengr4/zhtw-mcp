@@ -330,3 +330,59 @@ fn help_subcommand_does_not_exist() {
         "'help' should be an unknown argument: {stderr}"
     );
 }
+
+/// The family names listed in the `--off` entry of lint help, sorted.
+///
+/// The entry runs from the `--off` line to the next option line, and the names
+/// are what follows the first colon: a comma-separated list that wraps across
+/// the continuation lines.
+fn listed_families(help: &str) -> Vec<String> {
+    let mut entry = help
+        .lines()
+        .skip_while(|line| !line.trim_start().starts_with("--off "));
+    let first = entry.next().expect("lint help should carry an --off entry");
+    let (_, head) = first
+        .split_once(':')
+        .expect("the --off help entry introduces its family list with a colon");
+    std::iter::once(head)
+        .chain(entry.take_while(|line| !line.trim_start().starts_with("--")))
+        .flat_map(|line| line.split(','))
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+#[test]
+fn lint_help_lists_every_family_off_accepts() {
+    // Both directions, for the same reason the host list is checked both ways:
+    // a family the help omits is one nobody finds, and a family the help names
+    // and the parser rejects wastes the time of somebody who followed it. The
+    // list is written by hand in docs/cli.md, which build.rs embeds, so nothing
+    // else notices a family renamed in RuleFamily.
+    let stdout = help_stdout(&["lint", "--help"]);
+    let listed = listed_families(&stdout);
+
+    let mut expected: Vec<String> = zhtw_mcp::rules::ruleset::RuleFamily::ALL
+        .iter()
+        .map(|family| family.name().to_owned())
+        .collect();
+    expected.sort_unstable();
+    assert_eq!(listed, expected, "lint help lists the wrong rule families");
+
+    // One run naming every family, rather than trusting from_str_strict: what
+    // this adds over the assertion above is that the flag parser reaches the
+    // same lookup, and the first rejected name fails the run for all of them.
+    let mut args = vec!["lint".to_owned()];
+    args.extend(listed.iter().flat_map(|f| ["--off".to_owned(), f.clone()]));
+    args.push("--".to_owned());
+    let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+    let output = run(&argv);
+    assert!(
+        output.status.success(),
+        "lint help lists a family --off rejects: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
