@@ -16,8 +16,8 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use zhtw_mcp::engine::scan::{ContentType, ProfileFilter, Scanner};
-use zhtw_mcp::rules::ruleset::{Issue, Profile};
+use zhtw_mcp::engine::scan::{ProfileFilter, Scanner};
+use zhtw_mcp::rules::ruleset::{Issue, Profile, ProfileConfig};
 
 /// Cap on the hook payload read from stdin.
 ///
@@ -103,7 +103,28 @@ fn callback_inner(payload_json: &str, cache_path: &Path) -> Option<String> {
         .and_then(|c| c.translation_memory.as_ref().map(PathBuf::from))
         .unwrap_or_else(|| zhtw_mcp::rules::store::discover_tm_path(anchor));
 
-    let fingerprint = rules_fingerprint(&overrides_path, config_path.as_deref(), &tm_path);
+    // The packs the scan will merge, by file, so installing or editing one
+    // moves the digest. A pack decides findings now, so a cached verdict that
+    // ignored it would answer for a rule set that has since changed. Through
+    // PackStore, which validates the name: the config is project controlled,
+    // and a name carrying a separator or ".." would otherwise reach a path
+    // outside the packs directory. The scan already refuses those, and the
+    // digest has to refuse the same ones.
+    let pack_store =
+        zhtw_mcp::rules::store::PackStore::new(zhtw_mcp::rules::store::default_packs_dir());
+    let pack_paths: Vec<PathBuf> = project_cfg
+        .as_ref()
+        .and_then(|c| c.packs.as_deref())
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|name| pack_store.pack_path(name).ok())
+        .collect();
+    let fingerprint = rules_fingerprint(
+        &overrides_path,
+        config_path.as_deref(),
+        &tm_path,
+        &pack_paths,
+    );
 
     let cache = HookCache::open(cache_path);
     let previous = cache.lookup(&payload.file_path);
@@ -140,6 +161,7 @@ fn callback_inner(payload_json: &str, cache_path: &Path) -> Option<String> {
         store.as_ref(),
         &glossary,
         tm.as_ref(),
+        project_cfg.as_ref(),
     );
     let issues_hash = issues_digest(&issues);
 
@@ -227,25 +249,28 @@ fn read_lintable(path: &str) -> Option<String> {
     Some(text)
 }
 
-/// Scan one document the way the lint front end would: the base profile
-/// merged with the user's overrides, then the project glossary and the
-/// translation memory applied on top.  Skipping any of those layers would
-/// have the hook re-reporting what `zhtw-mcp lint` deliberately keeps quiet,
-/// which is the nagging this hook exists to remove.  Packs are
-/// per-invocation opt-in and a hook has no flag context, so none are active.
-/// A `None` store degrades to the embedded rules: a broken config file
-/// should not switch the hook off.
+/// Scan one document the way the lint front end would: the project config's
+/// own profile merged with the user's overrides, then the project glossary,
+/// the translation memory and `ignore_terms` applied on top.  Skipping any of
+/// those layers would have the hook re-reporting what `zhtw-mcp lint`
+/// deliberately keeps quiet, which is the nagging this hook exists to remove.
+/// The active packs are the ones the project config names, which are the only
+/// packs a hook can know about since it has no flag context; their files are
+/// part of the cache fingerprint, so editing a pack re-scans.  A `None` store
+/// or a `None` config degrades to the embedded rules and the base profile: a
+/// broken config file should not switch the hook off.
 ///
-/// Info-severity issues are dropped from the result.  TM and glossary
-/// suppression express themselves by downgrading to Info, and advisory
-/// findings are not worth a nag on every write, so the severity floor and
-/// honoring the suppressions are the same cut.
+/// Info-severity issues are dropped from the result.  TM, glossary and
+/// `ignore_terms` suppression all express themselves by downgrading to Info,
+/// and advisory findings are not worth a nag on every write, so the severity
+/// floor and honoring the suppressions are the same cut.
 fn scan_file(
     content: &str,
     file_path: &str,
     store: Option<&zhtw_mcp::rules::store::OverrideStore>,
     glossary: &zhtw_mcp::rules::glossary::ProjectGlossary,
     tm: Option<&zhtw_mcp::rules::store::TranslationMemoryStore>,
+    project: Option<&zhtw_mcp::config::ProjectConfig>,
 ) -> Vec<Issue> {
     let ruleset = match zhtw_mcp::rules::loader::load_embedded_ruleset() {
         Ok(r) => r,
@@ -254,28 +279,36 @@ fn scan_file(
             return Vec::new();
         }
     };
-    let cfg = Profile::Base.config();
+    let cfg = project_config(project);
     let filter = ProfileFilter::from_config(&cfg);
 
     let scanner = match store {
         Some(store) => {
             let packs =
                 zhtw_mcp::rules::store::PackStore::new(zhtw_mcp::rules::store::default_packs_dir());
+
+            // The project's packs, the same list lint unions in from the
+            // config. Without them the hook stays quiet about pack-only
+            // findings that lint reports on the very same file.
+            let active: Vec<String> = project.and_then(|c| c.packs.clone()).unwrap_or_default();
             let (spelling, case) = zhtw_mcp::rules::store::build_merged_rules(
                 &ruleset.spelling_rules,
                 &ruleset.case_rules,
                 store,
                 &packs,
-                &[],
+                &active,
             );
             Scanner::new_filtered(spelling, case, &filter)
         }
         None => Scanner::new_filtered(ruleset.spelling_rules, ruleset.case_rules, &filter),
     };
 
-    let content_type = ContentType::from_file_name(file_path);
+    let content_type = crate::cli::lint::content_type_for(
+        project.and_then(|c| c.content_type.as_deref()),
+        file_path,
+    );
     let issues = scanner
-        .scan_for_content_type(content, content_type, Profile::Base)
+        .scan_for_content_type_with_config(content, content_type, cfg)
         .issues;
 
     let mut issues = zhtw_mcp::rules::glossary::apply_glossary_with_coordinates(
@@ -288,8 +321,51 @@ fn scan_file(
     if let Some(tm) = tm {
         tm.suppress_issues(&mut issues);
     }
+    if let Some(terms) = project.and_then(|c| c.ignore_terms.as_deref()) {
+        let ignore_set: std::collections::HashSet<&str> =
+            terms.iter().map(String::as_str).collect();
+        zhtw_mcp::rules::ignore::apply_ignore_set(&mut issues, &ignore_set);
+    }
     issues.retain(|i| i.severity != zhtw_mcp::rules::ruleset::Severity::Info);
     issues
+}
+
+/// The effective config for a hooked file: the project's `.zhtw-mcp.toml`
+/// resolved the same way `zhtw-mcp lint` resolves it, minus the axes that
+/// only exist as command-line flags.  A file whose project turns a family off
+/// or picks a spacing policy must not be nagged about what that choice
+/// silences, or the hook contradicts the linter it speaks for.
+fn project_config(project: Option<&zhtw_mcp::config::ProjectConfig>) -> ProfileConfig {
+    // A profile name this build does not know degrades to base rather than
+    // failing the way lint does. The two differ on purpose: lint is a command
+    // whose exit code the author is reading, and a hook that refuses to run
+    // breaks the write loop it sits in. Base is the safe direction, since it
+    // enforces a subset of strict and can only under-report.
+    let profile = project
+        .and_then(|c| c.profile.as_deref())
+        .and_then(Profile::from_str_strict)
+        .unwrap_or(Profile::Base);
+    let mut cfg = profile.config();
+    if project.and_then(|c| c.relaxed).unwrap_or(false) {
+        cfg = cfg.with_relaxed();
+    }
+    if let Some(policy) = project.and_then(|c| c.spacing) {
+        cfg = cfg.with_spacing_policy(policy);
+    }
+    if project
+        .and_then(|c| c.markdown.as_ref())
+        .and_then(|m| m.exempt_blockquotes)
+        .unwrap_or(false)
+    {
+        cfg = cfg.with_exempt_blockquotes(true);
+    }
+
+    // Last, like every other front end: subtraction applies after the profile
+    // and the capability flags have resolved.
+    if let Some(off) = project.and_then(|c| c.off.as_deref()) {
+        cfg = cfg.with_disabled(off);
+    }
+    cfg
 }
 
 /// Location-independent digest of an issue set.
@@ -499,11 +575,17 @@ impl HookCache {
 /// identical binary invalidates for nothing, costing one re-scan per file;
 /// a swapped binary with identical mtime and size is not a case that
 /// happens outside of construction.
-fn rules_fingerprint(overrides_path: &Path, config_path: Option<&Path>, tm_path: &Path) -> String {
+fn rules_fingerprint(
+    overrides_path: &Path,
+    config_path: Option<&Path>,
+    tm_path: &Path,
+    pack_paths: &[PathBuf],
+) -> String {
     let mut hasher = blake3::Hasher::new();
     for path in [Some(overrides_path), config_path, Some(tm_path)]
         .into_iter()
         .flatten()
+        .chain(pack_paths.iter().map(|p| p.as_path()))
     {
         if let Ok(bytes) = std::fs::read(path) {
             hasher.update(&bytes);
@@ -612,8 +694,10 @@ fn shell_quote(path: &str) -> String {
     }
 }
 
-/// Merge the hook registration into a settings document, preserving
-/// everything else byte-for-byte.
+/// Merge the hook registration into a settings document, preserving every
+/// other setting.  The file is re-serialized rather than patched in place, so
+/// its formatting is normalized and, since serde_json is built without
+/// `preserve_order`, object keys come back sorted; the values are untouched.
 ///
 /// Works on `serde_json::Value` rather than a typed struct on purpose: this
 /// file belongs to Claude Code, not to zhtw-mcp, and deserializing it into
