@@ -469,6 +469,7 @@ fn bench_cpu_attribution_100kb(c: &mut Criterion) {
         punctuation: false,
         quotes: false,
         spacing: false,
+        spacing_policy: zhtw_mcp::rules::ruleset::SpacingPolicy::Require,
         colon_enforcement: false,
         dunhao_detection: false,
         range_normalization: false,

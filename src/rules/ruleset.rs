@@ -198,6 +198,27 @@ impl RegisterMode {
     }
 }
 
+/// The project policy for spaces at CJK/Latin and CJK/digit boundaries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SpacingPolicy {
+    /// Store a U+0020 space at each boundary.
+    Require,
+    /// Store no U+0020 space and leave boundary spacing to the renderer.
+    Strip,
+}
+
+impl SpacingPolicy {
+    /// Strictly parse the names exposed by the CLI and MCP tool.
+    pub fn from_str_strict(s: &str) -> Option<Self> {
+        match s {
+            "require" => Some(Self::Require),
+            "strip" => Some(Self::Strip),
+            _ => None,
+        }
+    }
+}
+
 /// Processing chain configuration for a profile.
 ///
 /// Each profile is a combination of enabled rule stages rather than a
@@ -217,6 +238,8 @@ pub struct ProfileConfig {
     pub quotes: bool,
     /// Enable spacing between CJK, Latin letters, and digits.
     pub spacing: bool,
+    /// Whether CJK/Latin and CJK/digit boundaries require a space or strip it.
+    pub spacing_policy: SpacingPolicy,
     /// Enable full-width colon enforcement (: -> ：).
     pub colon_enforcement: bool,
     /// Enable enumeration comma (dunhao) detection.
@@ -282,6 +305,12 @@ pub struct ProfileConfig {
 }
 
 impl ProfileConfig {
+    /// Choose how CJK/Latin and CJK/digit boundaries are represented.
+    pub fn with_spacing_policy(mut self, policy: SpacingPolicy) -> Self {
+        self.spacing_policy = policy;
+        self
+    }
+
     /// Disable the named public rule families after all profile capabilities
     /// have resolved.  Subtraction is deliberately one-way: a caller can
     /// compose a profile and capabilities, then make only the unwanted
@@ -416,6 +445,7 @@ impl Profile {
                 punctuation: true,
                 quotes: true,
                 spacing: true,
+                spacing_policy: SpacingPolicy::Require,
                 colon_enforcement: true,
                 dunhao_detection: true,
                 range_normalization: true,
@@ -445,6 +475,7 @@ impl Profile {
                 punctuation: true,
                 quotes: true,
                 spacing: true,
+                spacing_policy: SpacingPolicy::Require,
                 colon_enforcement: true,
                 dunhao_detection: true,
                 range_normalization: true,

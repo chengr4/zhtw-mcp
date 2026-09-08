@@ -24,6 +24,7 @@ pub(crate) struct LintBatchParams<'a> {
     pub(crate) max_errors: usize,
     pub(crate) max_warnings: Option<usize>,
     pub(crate) profile_name: Option<&'a str>,
+    pub(crate) spacing: Option<zhtw_mcp::rules::ruleset::SpacingPolicy>,
     pub(crate) off: &'a [zhtw_mcp::rules::ruleset::RuleFamily],
     pub(crate) content_type_override: Option<&'a str>,
     pub(crate) overrides_path: &'a Path,
@@ -126,6 +127,9 @@ fn build_lint_setup(
     let mut cfg = profile.config();
     if params.relaxed {
         cfg = cfg.with_relaxed();
+    }
+    if let Some(policy) = params.spacing {
+        cfg = cfg.with_spacing_policy(policy);
     }
     if params.exempt_blockquotes {
         cfg = cfg.with_exempt_blockquotes(true);

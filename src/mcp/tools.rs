@@ -331,6 +331,7 @@ impl Server {
             relaxed,
             exempt_blockquotes,
             rhythm,
+            spacing,
             include_telemetry,
             include_stats,
             #[cfg(feature = "translate")]
@@ -394,6 +395,7 @@ impl Server {
                 register: register_opt.as_deref(),
                 ai_threshold,
                 rhythm,
+                spacing,
                 off,
             },
         )?;
@@ -992,6 +994,9 @@ struct CheckParams<'a> {
     /// the CLI: the tool exposes it so an agent can ask for the same advice a
     /// human gets from --rhythm.
     rhythm: bool,
+    /// CJK/Latin and CJK/digit boundary policy, validated into a
+    /// SpacingPolicy once the config is built.
+    spacing: Option<&'a str>,
     off: Vec<crate::rules::ruleset::RuleFamily>,
     glossary: crate::rules::glossary::ProjectGlossary,
     consistency_requested: bool,
@@ -1027,6 +1032,7 @@ impl<'a> CheckParams<'a> {
             relaxed: parse_flag(args, "relaxed"),
             exempt_blockquotes: parse_flag(args, "exempt_blockquotes"),
             rhythm: parse_flag(args, "rhythm"),
+            spacing: optional_str_validated(args, "spacing")?,
             off: parse_off(args)?,
             glossary: parse_glossary(args),
             consistency_requested: parse_flag(args, "consistency"),
@@ -2041,6 +2047,7 @@ struct CheckFlags<'a> {
     register: Option<&'a str>,
     ai_threshold: Option<&'a str>,
     rhythm: bool,
+    spacing: Option<&'a str>,
     off: &'a [crate::rules::ruleset::RuleFamily],
 }
 
@@ -2093,6 +2100,12 @@ fn build_check_config(
     }
     if flags.rhythm {
         cfg = cfg.with_rhythm(true);
+    }
+    if let Some(policy) = flags.spacing {
+        match crate::rules::ruleset::SpacingPolicy::from_str_strict(policy) {
+            Some(policy) => cfg = cfg.with_spacing_policy(policy),
+            None => return Err(enum_param_error("spacing", policy)),
+        }
     }
 
     // Resolve effective AI detection: explicit arg wins over profile default.
@@ -2794,6 +2807,11 @@ fn input_schema_properties() -> &'static JsonObject {
                 "type": "string",
                 "enum": ["base", "strict"],
                 "description": "Norm strictness: 'base' (default) or 'strict' (full MoE with character variants)"
+            }));
+        props.insert("spacing".into(), json!({
+                "type": "string",
+                "enum": ["require", "strip"],
+                "description": "CJK/Latin and CJK/digit boundary policy: require spaces (default), or strip stored spaces for renderer autospacing"
             }));
         props.insert("relaxed".into(), json!({
                 "type": "boolean",

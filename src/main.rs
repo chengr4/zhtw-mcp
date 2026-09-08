@@ -205,6 +205,7 @@ fn run_lint(
         .profile
         .as_deref()
         .or_else(|| cfg_ref.and_then(|c| c.profile.as_deref()));
+    let eff_spacing = lint.spacing.or_else(|| cfg_ref.and_then(|c| c.spacing));
     // CLI --relaxed flag overrides config file relaxed setting.
     let eff_relaxed = lint.relaxed || cfg_ref.and_then(|c| c.relaxed).unwrap_or(false);
     // Family subtractions compose across the command line and project config.
@@ -266,6 +267,7 @@ fn run_lint(
         max_errors: eff_max_errors,
         max_warnings: eff_max_warnings,
         profile_name: eff_profile,
+        spacing: eff_spacing,
         off: &eff_off,
         content_type_override: eff_content_type,
         overrides_path: &eff_overrides,

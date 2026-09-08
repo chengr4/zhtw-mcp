@@ -913,7 +913,7 @@ impl Scanner {
             self.scan_quotes(&mut em);
         }
         if cfg.spacing {
-            self.scan_spacing(&mut em);
+            self.scan_spacing(&mut em, cfg);
         }
         if cfg.ellipsis_normalization {
             scan_ellipsis(&mut em);
@@ -1366,7 +1366,7 @@ impl Scanner {
             self.scan_quotes(em);
         }
         if cfg.spacing {
-            self.scan_spacing(em);
+            self.scan_spacing(em, cfg);
         }
         // Repetition detection (CJK duplicates + Latin duplicates).
         repetition::scan_repetition(em);
