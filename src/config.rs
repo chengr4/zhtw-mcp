@@ -88,7 +88,11 @@ impl ProjectConfig {
 
 /// Walk from start upward looking for .zhtw-mcp.toml.
 /// Stop at .git directory or filesystem root.
-fn find_config_file(start: &Path) -> Option<PathBuf> {
+///
+/// Public so a caller that needs the file itself, not just the parsed
+/// config, resolves it through the same walk `discover` uses: the hook
+/// callback hashes the bytes into its cache fingerprint.
+pub fn find_config_file(start: &Path) -> Option<PathBuf> {
     let mut dir = start.to_path_buf();
     loop {
         let candidate = dir.join(CONFIG_FILENAME);

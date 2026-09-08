@@ -506,6 +506,39 @@ fn cache_clear_takes_no_extra_arguments() {
 }
 
 #[test]
+fn hook_install_takes_no_extra_arguments() {
+    assert!(matches!(
+        parse(&["hook", "install"]).unwrap().command,
+        Command::HookInstall
+    ));
+    assert!(err_of(&["hook", "install", "now"]).contains("does not accept additional"));
+    assert!(err_of(&["hook", "uninstall"]).contains("unknown hook subcommand"));
+    assert!(err_of(&["hook"]).contains("hook requires a subcommand"));
+}
+
+#[test]
+fn internal_hook_callback_takes_no_extra_arguments() {
+    assert!(matches!(
+        parse(&["internal", "hook-callback"]).unwrap().command,
+        Command::HookCallback
+    ));
+    assert!(
+        err_of(&["internal", "hook-callback", "file.md"]).contains("does not accept additional")
+    );
+    assert!(err_of(&["internal", "frobnicate"]).contains("unknown internal subcommand"));
+    assert!(err_of(&["internal"]).contains("internal requires a subcommand"));
+}
+
+#[test]
+fn hook_subcommands_participate_in_the_claim() {
+    assert!(err_of(&["hook", "install", "cache", "clear"]).contains("does not accept"));
+    assert!(err_of(&["setup", "claude", "hook", "install"]).contains("only one subcommand"));
+    assert!(
+        err_of(&["setup", "claude", "internal", "hook-callback"]).contains("only one subcommand")
+    );
+}
+
+#[test]
 fn setup_requires_a_host() {
     match parse(&["setup", "claude"]).unwrap().command {
         Command::Setup(h) => assert_eq!(h, "claude"),
@@ -596,7 +629,7 @@ fn every_subcommand_row_reaches_the_command_it_names() {
             Command::Pack { .. } => HelpTopic::Pack,
             Command::Tm(_) => HelpTopic::Tm,
             Command::CacheClear => HelpTopic::Cache,
-            Command::Server | Command::Help(_) => {
+            Command::Server | Command::Help(_) | Command::HookInstall | Command::HookCallback => {
                 panic!("{name} should parse as a subcommand")
             }
         };

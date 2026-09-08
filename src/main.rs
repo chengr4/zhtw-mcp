@@ -67,6 +67,17 @@ fn run(cli: Cli) -> Result<()> {
             run_setup(&host)
         }
 
+        Command::HookInstall => cli::hook::run_hook_install(),
+
+        // Machine-invoked by Claude Code after every Write/Edit. Errors are
+        // swallowed inside rather than propagated: main() maps Err to exit 2,
+        // and in the hook protocol a non-zero exit blocks the agent, which a
+        // linter must never do.
+        Command::HookCallback => {
+            cli::hook::run_hook_callback();
+            Ok(())
+        }
+
         Command::CacheClear => {
             let mut cache = zhtw_mcp::rules::judgment_cache::JudgmentCache::open_default();
             let count = cache.len();

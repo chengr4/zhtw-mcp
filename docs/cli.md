@@ -20,6 +20,7 @@ Commands:
   pack <subcommand>   Manage rule packs (import|export|validate|list)
   tm <subcommand>     Manage translation memory (list|export|import|clear|record)
   cache clear         Clear the LLM judgment cache
+  hook install        Register the Claude Code PostToolUse lint hook
 
 Global options:
   --overrides <path>     Custom overrides JSON path (alias: --db)

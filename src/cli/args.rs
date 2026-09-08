@@ -37,6 +37,15 @@ pub(crate) enum Command {
     Pack { cmd: String, arg: Option<String> },
     Tm(TmArgs),
     CacheClear,
+
+    // hook install: register the Claude Code PostToolUse hook in the user's
+    // settings.json.
+    HookInstall,
+
+    // internal hook-callback: the machine-invoked entry point that hook
+    // registration points at. Hidden: absent from the help text because nothing
+    // under the internal namespace is for humans to type.
+    HookCallback,
     Help(HelpTopic),
 }
 
@@ -316,6 +325,16 @@ pub(crate) fn parse_args(args: &[String]) -> Result<Cli> {
                 claim(&cli.command, "cache")?;
                 i += parse_cache(&args[i + 1..])?;
                 cli.command = Command::CacheClear;
+            }
+            "hook" => {
+                claim(&cli.command, "hook")?;
+                i += parse_hook(&args[i + 1..])?;
+                cli.command = Command::HookInstall;
+            }
+            "internal" => {
+                claim(&cli.command, "internal")?;
+                i += parse_internal(&args[i + 1..])?;
+                cli.command = Command::HookCallback;
             }
             "--suppressions" => {
                 i += 1;
@@ -663,6 +682,37 @@ fn parse_pack(rest: &[String]) -> Result<(String, Option<String>, usize)> {
             Ok((cmd, Some(arg), 2))
         }
         _ => Ok((cmd, None, 1)),
+    }
+}
+
+/// Parse the arguments after `hook`.  `install` is the only subcommand and it
+/// takes nothing, so trailing arguments are a typo worth reporting.
+fn parse_hook(rest: &[String]) -> Result<usize> {
+    match rest.first().map(String::as_str) {
+        Some("install") => match rest.get(1) {
+            Some(extra) => {
+                anyhow::bail!("hook install does not accept additional arguments: {extra}")
+            }
+            None => Ok(1),
+        },
+        Some(other) => anyhow::bail!("unknown hook subcommand: {other} (expected 'install')"),
+        None => anyhow::bail!("hook requires a subcommand (install)"),
+    }
+}
+
+/// Parse the arguments after `internal`, the namespace for machine-invoked
+/// entry points.  `hook-callback` is the only one; it reads its input from
+/// stdin, so trailing arguments are a mis-wired hook registration.
+fn parse_internal(rest: &[String]) -> Result<usize> {
+    match rest.first().map(String::as_str) {
+        Some("hook-callback") => match rest.get(1) {
+            Some(extra) => {
+                anyhow::bail!("hook-callback does not accept additional arguments: {extra}")
+            }
+            None => Ok(1),
+        },
+        Some(other) => anyhow::bail!("unknown internal subcommand: {other}"),
+        None => anyhow::bail!("internal requires a subcommand"),
     }
 }
 

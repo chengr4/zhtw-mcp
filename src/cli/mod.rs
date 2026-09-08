@@ -3,6 +3,7 @@
 
 pub(crate) mod args;
 pub(crate) mod discover;
+pub(crate) mod hook;
 pub(crate) mod lint;
 pub(crate) mod render;
 
