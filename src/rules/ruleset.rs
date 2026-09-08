@@ -305,6 +305,59 @@ pub struct ProfileConfig {
 }
 
 impl ProfileConfig {
+    /// Every pass off, the baseline a caller enables one axis at a time from.
+    ///
+    /// It lives beside the struct so that a new field reaches it, and through
+    /// it every caller that spreads it, with the pass off. A literal spelled
+    /// out field by field elsewhere goes stale instead, and the compiler
+    /// reports that only where it is written.
+    pub fn all_disabled() -> Self {
+        Self {
+            document_genre: AttributionGenre::Casual,
+            spelling: false,
+            casing: false,
+            punctuation: false,
+            quotes: false,
+            spacing: false,
+            spacing_policy: SpacingPolicy::Require,
+            colon_enforcement: false,
+            dunhao_detection: false,
+            range_normalization: false,
+            variant_normalization: false,
+            ellipsis_normalization: false,
+            range_en_dash: false,
+            grammar_checks: false,
+            ai_filler_detection: false,
+            translationese_detection: false,
+            translationese_domain:
+                crate::engine::translationese_score::TranslationeseDomain::General,
+            ai_semantic_safety: false,
+            ai_density_detection: false,
+            ai_structural_patterns: false,
+            ai_threshold_multiplier: 1.0,
+            heading_severity_boost: false,
+            political_stance: PoliticalStance::RocCentric,
+            offset_only: false,
+            exempt_blockquotes: false,
+            register: RegisterMode::Auto,
+            rhythm: false,
+        }
+    }
+
+    /// True when any AI detection stage is on.
+    ///
+    /// The four sub-flags move as a unit, and three callers ask the same
+    /// question: the score, the zero-width pass, and the CLI's post-fix
+    /// rescan. Spelled out at each of them, a fifth sub-flag reaches only the
+    /// sites someone remembers, which is how a zero-width count once reached a
+    /// caller with no issue to fix.
+    pub fn ai_detection_active(&self) -> bool {
+        self.ai_filler_detection
+            || self.ai_semantic_safety
+            || self.ai_density_detection
+            || self.ai_structural_patterns
+    }
+
     /// Choose how CJK/Latin and CJK/digit boundaries are represented.
     pub fn with_spacing_policy(mut self, policy: SpacingPolicy) -> Self {
         self.spacing_policy = policy;

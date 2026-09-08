@@ -17,6 +17,7 @@ use crate::cli::render::{
 };
 use crate::cli::render::{use_color, Colors, COLORS_OFF, COLORS_ON};
 use crate::{EXIT_FAILURE, EXIT_GATE};
+use zhtw_mcp::cache::CacheSubject;
 
 pub(crate) struct LintBatchParams<'a> {
     pub(crate) file_args: &'a [String],
@@ -568,14 +569,16 @@ impl ScanCtx<'_> {
                 if let Some(Ok(mut c)) = scan_cache.as_ref().map(|mtx| mtx.lock()) {
                     let mtime = zhtw_mcp::cache::mtime_secs(&meta);
                     c.put(
-                        file_arg,
-                        text.as_bytes(),
-                        mtime,
-                        meta.len(),
+                        CacheSubject {
+                            file_path: file_arg,
+                            content: text.as_bytes(),
+                            mtime_secs: mtime,
+                            size: meta.len(),
+                            input_was_sc,
+                            text_char_count,
+                        },
                         &cache_params,
                         o.clone(),
-                        input_was_sc,
-                        text_char_count,
                     );
                 }
                 o
@@ -883,11 +886,7 @@ fn rescan_written_text(
             .scanner
             .scan_for_content_type_with_config(current_text, content_type, cfg);
 
-    let ai_active = cfg.ai_filler_detection
-        || cfg.ai_semantic_safety
-        || cfg.ai_density_detection
-        || cfg.ai_structural_patterns;
-    if ai_active {
+    if cfg.ai_detection_active() {
         *ai_signature = rescan_output.ai_signature;
     }
     if cfg.translationese_detection {
