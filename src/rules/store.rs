@@ -887,10 +887,18 @@ impl PackStore {
         packs
     }
 
+    /// The file a pack name resolves to, once the name is known to be a plain
+    /// component. Public so a caller that needs the path without the contents,
+    /// such as the hook's cache fingerprint, cannot re-derive it and skip the
+    /// validation on the way.
+    pub fn pack_path(&self, name: &str) -> Result<PathBuf> {
+        Self::validate_pack_name(name)?;
+        Ok(self.dir.join(format!("{name}.json")))
+    }
+
     /// Load a pack by name.
     pub fn load(&self, name: &str) -> Result<Overrides> {
-        Self::validate_pack_name(name)?;
-        let path = self.dir.join(format!("{name}.json"));
+        let path = self.pack_path(name)?;
         let content = std::fs::read_to_string(&path)
             .with_context(|| format!("read pack: {}", path.display()))?;
         serde_json::from_str(&content).with_context(|| format!("parse pack: {}", path.display()))

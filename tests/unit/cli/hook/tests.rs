@@ -303,3 +303,108 @@ fn callback_stays_silent_on_everything_but_a_lintable_write() {
         "clean file"
     );
 }
+
+#[test]
+fn project_config_layers_every_axis_the_lint_front_end_reads() {
+    // A hook that ignored these would nag about exactly what the project has
+    // already told the linter to keep quiet about.
+    let toml = r#"
+profile = "strict"
+spacing = "strip"
+relaxed = true
+off = ["quotes"]
+
+[markdown]
+exempt_blockquotes = true
+"#;
+    let project: zhtw_mcp::config::ProjectConfig = toml::from_str(toml).unwrap();
+    let cfg = project_config(Some(&project));
+    assert!(cfg.variant_normalization, "profile = strict was not read");
+    assert_eq!(
+        cfg.spacing_policy,
+        zhtw_mcp::rules::ruleset::SpacingPolicy::Strip
+    );
+    assert!(!cfg.colon_enforcement, "relaxed was not applied");
+    assert!(!cfg.quotes, "off was not applied");
+    assert!(cfg.exempt_blockquotes, "[markdown] section was not read");
+
+    // No config file is the base profile untouched.
+    assert_eq!(
+        format!("{:?}", project_config(None)),
+        format!("{:?}", Profile::Base.config()),
+    );
+}
+
+#[test]
+fn hook_honors_project_content_type_over_file_extension() {
+    let project: zhtw_mcp::config::ProjectConfig =
+        toml::from_str("content_type = \"plain\"").unwrap();
+    let content = "    這個軟件很好用\n";
+    let glossary = zhtw_mcp::rules::glossary::ProjectGlossary::default();
+
+    let markdown_issues = scan_file(content, "document.md", None, &glossary, None, None);
+    let plain_issues = scan_file(
+        content,
+        "document.md",
+        None,
+        &glossary,
+        None,
+        Some(&project),
+    );
+
+    assert!(
+        markdown_issues.is_empty(),
+        "Markdown excludes indented code"
+    );
+    assert!(
+        plain_issues.iter().any(|issue| issue.found == "軟件"),
+        "project content_type = plain must override the .md extension"
+    );
+}
+
+#[test]
+fn the_fingerprint_moves_when_a_configured_pack_changes() {
+    // The hook now merges the packs the project config names, so a pack is part
+    // of what decides the verdict and has to be part of what decides whether a
+    // cached verdict still stands. Before packs were active the fingerprint
+    // could ignore them; now it cannot.
+    let dir = tempfile::tempdir().unwrap();
+    let overrides = dir.path().join("overrides.json");
+    let tm = dir.path().join("tm.json");
+    let pack = dir.path().join("probe.json");
+    std::fs::write(&pack, r#"{"schema_version":3,"spelling":[]}"#).unwrap();
+
+    let before = rules_fingerprint(&overrides, None, &tm, std::slice::from_ref(&pack));
+    std::fs::write(&pack, r#"{"schema_version":3,"spelling":[{"from":"x"}]}"#).unwrap();
+    let after = rules_fingerprint(&overrides, None, &tm, std::slice::from_ref(&pack));
+    assert_ne!(before, after, "editing a configured pack must re-scan");
+
+    // A pack the config does not name changes nothing, which has to be shown by
+    // editing that pack rather than by hashing the same inputs twice.
+    let other = dir.path().join("unnamed.json");
+    std::fs::write(&other, r#"{"schema_version":3,"spelling":[]}"#).unwrap();
+    let without = rules_fingerprint(&overrides, None, &tm, &[]);
+    std::fs::write(&other, r#"{"schema_version":3,"spelling":[{"from":"y"}]}"#).unwrap();
+    assert_eq!(
+        without,
+        rules_fingerprint(&overrides, None, &tm, &[]),
+        "a pack the config does not name must not move the digest"
+    );
+}
+
+#[test]
+fn a_pack_name_cannot_escape_the_packs_directory() {
+    // The config is project controlled, so a clone can carry one. The scan path
+    // already refuses these names; the fingerprint has to refuse the same ones
+    // or it reads a file the scan would never open.
+    let dir = tempfile::tempdir().unwrap();
+    let store = zhtw_mcp::rules::store::PackStore::new(dir.path().to_path_buf());
+    for name in ["../escape", "..", "a/b", "a\\b", "", "."] {
+        assert!(
+            store.pack_path(name).is_err(),
+            "pack name {name:?} should be refused"
+        );
+    }
+    let ok = store.pack_path("medical").unwrap();
+    assert_eq!(ok.parent(), Some(dir.path()));
+}
